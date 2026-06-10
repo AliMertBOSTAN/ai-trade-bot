@@ -1,0 +1,289 @@
+// ============================================================
+//  Paylaşılan tip tanımları (main <-> renderer <-> core)
+// ============================================================
+
+export type ChainId = 1 | 42161 | 8453 | 10 | 56 | 137
+
+export type DexProtocol = 'uniswap-v2' | 'uniswap-v3'
+
+export interface TokenInfo {
+  symbol: string
+  address: string
+  decimals: number
+}
+
+export interface DexConfig {
+  /** İnsan-okunur ad, ör. "Uniswap V3" */
+  name: string
+  protocol: DexProtocol
+  /** v2: router/factory, v3: quoter + factory */
+  factory: string
+  router?: string
+  quoter?: string
+  /** v3 fee tier (ör. 3000 = %0.3). v2 için kullanılmaz. */
+  feeTiers?: number[]
+}
+
+export interface ChainConfig {
+  chainId: ChainId
+  name: string
+  rpcEnvKey: string
+  nativeSymbol: string
+  /** Bu zincirde fiyatlamada referans alınacak stable (USDC vb.) */
+  stable: TokenInfo
+  /** Wrapped native (WETH/WBNB/WMATIC) */
+  wrappedNative: TokenInfo
+  dexes: DexConfig[]
+  /** Bu zincirde izlenecek token evreni */
+  tokens: TokenInfo[]
+  blockExplorer: string
+}
+
+// ---- Fiyat / piyasa verisi ----
+
+export interface PriceQuote {
+  chainId: ChainId
+  dex: string
+  base: string // sembol
+  quote: string // sembol (genelde stable)
+  /** 1 base = price quote */
+  price: number
+  /** Likidite tahmini (quote cinsinden), arbitraj fizibilitesi için */
+  liquidityUsd: number
+  timestamp: number
+}
+
+export interface Candle {
+  t: number // ms timestamp
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+// ---- Arbitraj ----
+
+export interface ArbitrageOpportunity {
+  id: string
+  base: string
+  quote: string
+  buyChain: ChainId
+  buyDex: string
+  buyPrice: number
+  sellChain: ChainId
+  sellDex: string
+  sellPrice: number
+  spreadPct: number
+  /** Tahmini net kâr (gas + slippage düşülmüş), quote cinsinden */
+  estNetProfitUsd: number
+  notionalUsd: number
+  timestamp: number
+}
+
+// ---- Sinyaller ----
+
+export type SignalAction = 'BUY' | 'SELL' | 'HOLD'
+
+export interface TechnicalSnapshot {
+  rsi: number
+  emaFast: number
+  emaSlow: number
+  macd: number
+  macdSignal: number
+  momentum: number
+  price: number
+}
+
+export interface TradeSignal {
+  id: string
+  chainId: ChainId
+  base: string
+  quote: string
+  action: SignalAction
+  /** 0..1 güven skoru */
+  confidence: number
+  technical: TechnicalSnapshot
+  /** LLM'in kısa gerekçesi (hibrit modda) */
+  rationale: string
+  source: 'technical' | 'llm' | 'hybrid'
+  timestamp: number
+}
+
+// ---- İşlemler / pozisyonlar ----
+
+export type TradeMode = 'paper' | 'live'
+export type TradeSide = 'BUY' | 'SELL'
+export type TradeStatus = 'pending' | 'filled' | 'failed' | 'rejected'
+
+export interface TradeOrder {
+  id: string
+  mode: TradeMode
+  chainId: ChainId
+  dex: string
+  base: string
+  quote: string
+  side: TradeSide
+  /** base cinsinden miktar */
+  amount: number
+  /** beklenen fiyat */
+  price: number
+  status: TradeStatus
+  txHash?: string
+  filledPrice?: number
+  feeUsd?: number
+  reason?: string
+  signalId?: string
+  timestamp: number
+}
+
+export interface Position {
+  key: string // chainId:base
+  chainId: ChainId
+  base: string
+  quote: string
+  amount: number
+  avgEntry: number
+  realizedPnlUsd: number
+  unrealizedPnlUsd: number
+  lastPrice: number
+}
+
+export interface PortfolioSnapshot {
+  cashUsd: number
+  equityUsd: number
+  positions: Position[]
+  realizedPnlUsd: number
+  unrealizedPnlUsd: number
+  timestamp: number
+}
+
+// ---- Bot durumu / config ----
+
+export interface RiskConfig {
+  maxPositionUsd: number
+  maxOpenPositions: number
+  maxDailyLossUsd: number
+  stopLossPct: number
+  takeProfitPct: number
+  slippageBps: number // basis points (100 = %1)
+  minConfidence: number
+}
+
+export interface BotConfig {
+  mode: TradeMode
+  pollIntervalMs: number
+  enabledChains: ChainId[]
+  startingCashUsd: number
+  risk: RiskConfig
+  llmProvider: 'anthropic' | 'openai' | 'none'
+}
+
+export type BotStatus = 'stopped' | 'running' | 'error'
+
+export interface BotState {
+  status: BotStatus
+  mode: TradeMode
+  lastTick: number
+  message?: string
+}
+
+// ---- IPC köprü sözleşmesi (preload -> renderer) ----
+
+export interface BotApi {
+  start: () => Promise<BotState>
+  stop: () => Promise<BotState>
+  getState: () => Promise<BotState>
+  getConfig: () => Promise<BotConfig>
+  setConfig: (patch: Partial<BotConfig>) => Promise<BotConfig>
+  setMode: (mode: TradeMode) => Promise<BotState>
+  getPrices: () => Promise<PriceQuote[]>
+  getArbitrage: () => Promise<ArbitrageOpportunity[]>
+  getSignals: () => Promise<TradeSignal[]>
+  getPortfolio: () => Promise<PortfolioSnapshot>
+  getTrades: (limit?: number) => Promise<TradeOrder[]>
+  getEquityCurve: () => Promise<{ t: number; equity: number }[]>
+  runBacktest: (params: BacktestParams) => Promise<BacktestResult>
+  onEvent: (cb: (evt: BotEvent) => void) => () => void
+}
+
+export interface BacktestParams {
+  base: string
+  quote: string
+  candles?: Candle[]
+  startingCashUsd: number
+  risk: RiskConfig
+}
+
+export interface BacktestResult {
+  trades: TradeOrder[]
+  equityCurve: { t: number; equity: number }[]
+  totalReturnPct: number
+  maxDrawdownPct: number
+  winRate: number
+  sharpe: number
+  finalEquityUsd: number
+}
+
+export type BotEvent =
+  | { type: 'tick'; state: BotState }
+  | { type: 'signal'; signal: TradeSignal }
+  | { type: 'trade'; order: TradeOrder }
+  | { type: 'arbitrage'; opp: ArbitrageOpportunity }
+  | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string }
+
+// ---- Açık piyasa verisi + haber (engine /marketdata, /news) ----
+
+export interface MarketCex {
+  source: string
+  symbol: string
+  price: number
+  change_pct_24h: number
+  high_24h: number
+  low_24h: number
+  volume_quote_24h: number
+  order_book?: {
+    best_bid: number
+    best_ask: number
+    spread_bps: number
+    imbalance: number
+  }
+}
+
+export interface MarketDex {
+  source: string
+  chain: string
+  dex: string
+  pair: string
+  price_usd: number
+  liquidity_usd: number
+  volume_24h_usd: number
+  change_pct_24h: number
+  url?: string
+}
+
+export interface MarketComparison {
+  cex_price: number
+  dex_price: number
+  dex_venue: string
+  spread_bps: number
+  dex_liquidity_usd: number
+  note: string
+}
+
+export interface MarketSnapshot {
+  symbol: string
+  ts: number
+  cex: MarketCex | null
+  dex: MarketDex | null
+  comparison: MarketComparison | null
+  errors: string[]
+}
+
+export interface NewsItem {
+  source: string
+  title: string
+  summary: string
+  link: string
+  ts: number
+}

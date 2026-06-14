@@ -29,12 +29,20 @@ SYSTEM_PROMPT = (
 def _build_user_prompt(base: str, quote: str, tech: TechnicalSnapshot,
                        rule_action: str, recent_returns: list[float]) -> str:
     trend = "yukarı" if tech.ema_fast > tech.ema_slow else "aşağı"
+    st_dir = "yukarı" if tech.supertrend_dir >= 0 else "aşağı"
     return (
         f"Parite: {base}/{quote}\n"
         f"Fiyat: {tech.price:.6f}\n"
-        f"RSI(14): {tech.rsi:.1f}\n"
+        f"RSI(14): {tech.rsi:.1f}  StochRSI: {tech.stoch_rsi:.0f}  "
+        f"Stoch%K: {tech.stoch_k:.0f}\n"
         f"EMA12: {tech.ema_fast:.6f}  EMA26: {tech.ema_slow:.6f} (trend: {trend})\n"
         f"MACD: {tech.macd:.6f}  Signal: {tech.macd_signal:.6f}\n"
+        f"ADX: {tech.adx:.0f} (+DI {tech.plus_di:.0f} / -DI {tech.minus_di:.0f})  "
+        f"Supertrend: {st_dir}\n"
+        f"Bollinger %B: {tech.bb_pct_b:.0f}  ATR: {tech.atr:.6f}  "
+        f"MFI: {tech.mfi:.0f}\n"
+        f"WaveTrend: {tech.wavetrend1:.0f}/{tech.wavetrend2:.0f}  "
+        f"AO: {tech.awesome:.4f}  Squeeze: {'AÇIK' if tech.squeeze_on else 'kapalı'}\n"
         f"Momentum(10): {tech.momentum:.2f}%\n"
         f"Son getiriler (%): {[round(r, 2) for r in recent_returns[-8:]]}\n"
         f"Kural tabanlı ön karar: {rule_action}\n\n"

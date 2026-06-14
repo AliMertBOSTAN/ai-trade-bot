@@ -8,33 +8,102 @@
 // ============================================================
 import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'node:path'
-import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, execFile, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { get as httpGet } from 'node:http'
+import { config as loadEnv } from 'dotenv'
 import { is } from '@electron-toolkit/utils'
 
+// Proje kökündeki .env'i Electron ana sürecine de yükle (Python tarafı ayrıca okur).
+// Böylece AUTO_START_ENGINE / ENGINE_PYTHON / ENGINE_URL ayarları .env'den çalışır.
+loadEnv()
+
 const ENGINE_URL = process.env.ENGINE_URL ?? 'http://127.0.0.1:8787'
-let engineProc: ChildProcessWithoutNullStreams | null = null
+// Engine'i uygulamayla birlikte otomatik başlat/durdur. Kapatmak için: AUTO_START_ENGINE=0
+const AUTO_START_ENGINE = process.env.AUTO_START_ENGINE !== '0'
+let engineProc: ChildProcess | null = null
+let engineOwned = false // bu süreci biz mi başlattık? (dışarıda çalışan uvicorn'u ÖLDÜRME)
 let win: BrowserWindow | null = null
 
-function startEngine(): void {
+/** Proje kökü (engine/ klasörünü içeren dizin). */
+function projectRoot(): string {
+  // dev: electron-vite proje kökünden çalışır; prod/preview: getAppPath proje kökü
+  return is.dev ? process.cwd() : app.getAppPath()
+}
+
+/** Python yorumlayıcısını seç: ENGINE_PYTHON > .venv > sistem python. */
+function resolvePython(root: string): string {
+  if (process.env.ENGINE_PYTHON) return process.env.ENGINE_PYTHON
+  const win = process.platform === 'win32'
+  const venv = win
+    ? join(root, '.venv', 'Scripts', 'python.exe')
+    : join(root, '.venv', 'bin', 'python')
+  if (existsSync(venv)) return venv
+  return win ? 'python' : 'python3'
+}
+
+/** Engine ayakta mı? (zaten çalışan uvicorn'u ikinci kez başlatmamak için.) */
+function pingEngine(timeoutMs = 1500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = httpGet(`${ENGINE_URL}/state`, (res) => {
+      res.resume()
+      resolve((res.statusCode ?? 500) < 500)
+    })
+    req.on('error', () => resolve(false))
+    req.setTimeout(timeoutMs, () => {
+      req.destroy()
+      resolve(false)
+    })
+  })
+}
+
+async function startEngine(): Promise<void> {
   if (engineProc) return
-  // proje kökünden: python -m uvicorn engine.app:app --port 8787
-  const cwd = join(app.getAppPath(), '..', '..') // out/main -> proje kökü (dev'de ayarlanır)
-  const py = process.platform === 'win32' ? 'python' : 'python3'
-  engineProc = spawn(py, ['-m', 'uvicorn', 'engine.app:app', '--port', '8787'], {
-    cwd: is.dev ? process.cwd() : cwd,
+  // Dışarıda elle başlatılmış bir engine varsa ona dokunma
+  if (await pingEngine()) {
+    console.log('[engine] zaten çalışıyor (port 8787) — yeni süreç başlatılmadı')
+    return
+  }
+  const root = projectRoot()
+  const py = resolvePython(root)
+  console.log(`[engine] başlatılıyor: ${py}  (kök: ${root})`)
+  const proc = spawn(py, ['-m', 'uvicorn', 'engine.app:app', '--port', '8787'], {
+    cwd: root,
     env: process.env
-  }) as ChildProcessWithoutNullStreams
-  engineProc.stdout.on('data', (d) => console.log('[engine]', d.toString().trim()))
-  engineProc.stderr.on('data', (d) => console.log('[engine]', d.toString().trim()))
-  engineProc.on('exit', (code) => {
+  })
+  engineProc = proc
+  engineOwned = true
+  proc.stdout?.on('data', (d) => console.log('[engine]', d.toString().trim()))
+  proc.stderr?.on('data', (d) => console.log('[engine]', d.toString().trim()))
+  proc.on('error', (err) => {
+    console.error(
+      `[engine] başlatılamadı: ${err.message}\n` +
+        '  -> Python/uvicorn kurulu mu? `pip install -r engine/requirements.txt` ' +
+        'veya .venv oluşturun. Farklı yorumlayıcı için ENGINE_PYTHON ayarlayın.'
+    )
+    engineProc = null
+    engineOwned = false
+  })
+  proc.on('exit', (code) => {
     console.log('[engine] çıkış kodu', code)
     engineProc = null
+    engineOwned = false
   })
 }
 
 function stopEngine(): void {
-  engineProc?.kill()
+  const proc = engineProc
   engineProc = null
+  // Yalnızca bizim başlattığımız süreci durdur
+  if (!proc || !engineOwned) return
+  engineOwned = false
+  const pid = proc.pid
+  if (process.platform === 'win32' && pid) {
+    // Windows: uvicorn + tüm alt süreçleri zorla kapat (SIGTERM güvenilir değil)
+    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => {})
+  } else {
+    proc.kill('SIGTERM')
+  }
 }
 
 // Content-Security-Policy'yi response header olarak uygula.
@@ -107,12 +176,15 @@ ipcMain.handle('engine:kill', () => {
 
 app.whenReady().then(() => {
   applyContentSecurityPolicy()
-  // İsteğe bağlı: engine'i otomatik başlat (AUTO_START_ENGINE=1)
-  if (process.env.AUTO_START_ENGINE === '1') startEngine()
+  // Engine'i uygulamayla birlikte otomatik başlat (varsayılan açık; AUTO_START_ENGINE=0 ile kapatılır)
+  if (AUTO_START_ENGINE) void startEngine()
   createWindow()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) {
+      if (AUTO_START_ENGINE) void startEngine() // macOS: dock'tan yeniden açılışta engine'i de geri getir
+      createWindow()
+    }
   })
 })
 

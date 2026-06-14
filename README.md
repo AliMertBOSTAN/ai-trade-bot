@@ -59,7 +59,14 @@ npm run dev          # arayüz açılır, 127.0.0.1:8787'e bağlanır
 ```
 
 Arayüzü açtıktan sonra **Paper/Live** geçişi ve **Başlat/Durdur** üst bardadır.
-`AUTO_START_ENGINE=1` ile Electron, Python engine'i otomatik başlatabilir.
+
+Electron, Python engine'ini (uvicorn :8787) **uygulamayla birlikte otomatik
+başlatır ve kapanışta durdurur** (varsayılan açık). Python'u `.venv` varsa
+ondan, yoksa sistem `python`'ından çalıştırır; özel yorumlayıcı için
+`ENGINE_PYTHON` ortam değişkenini ayarlayın. Zaten elle başlatılmış bir engine
+(port 8787) varsa ona dokunmaz. Otomatik başlatmayı kapatmak için
+`AUTO_START_ENGINE=0`. Bu durumda engine'i ayrıca `uvicorn engine.app:app
+--port 8787` ile elle başlatabilir veya arayüzdeki IPC köprüsünü kullanabilirsiniz.
 
 ### 3) Backtest
 

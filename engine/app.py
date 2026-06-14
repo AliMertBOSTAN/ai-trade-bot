@@ -19,7 +19,9 @@ from pydantic import BaseModel
 
 from engine.backtest.backtester import run_backtest
 from engine.bot.orchestrator import bot
+from engine.config.chains import CHAINS
 from engine.config.settings import settings
+from engine.dex import gas as gas_mod
 from engine.marketdata import aggregator as market_aggregator
 from engine.marketdata import analyst as market_analyst
 from engine.marketdata import news as market_news
@@ -156,6 +158,23 @@ def marketdata_multi(symbols: str = "ETH,BTC"):
 def get_news(limit: int = 30, q: str | None = None):
     """Anlık kripto haber başlıkları (RSS). q ile filtrelenebilir."""
     return market_news.fetch_headlines(limit=limit, query=q)
+
+
+@app.get("/gas")
+def gas():
+    """Zincir başına canlı gas fiyatı (gwei) + tek swap maliyeti (USD)."""
+    out = []
+    for cid in bot.enabled_chains:
+        ch = CHAINS.get(cid)
+        if ch is None:
+            continue
+        out.append({
+            "chain_id": cid,
+            "chain": ch.name,
+            "gwei": round(gas_mod.gas_price_gwei(cid), 3),
+            "swap_usd": round(gas_mod.gas_cost_usd(cid, gas_mod.GAS_UNITS_SWAP), 4),
+        })
+    return out
 
 
 @app.get("/analyst/{symbol}")

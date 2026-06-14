@@ -15,6 +15,7 @@ import logging
 from dataclasses import dataclass
 
 from engine.config.settings import RiskConfig
+from engine.dex import gas
 from engine.models import Position, TradeSignal
 
 log = logging.getLogger("risk")
@@ -61,6 +62,13 @@ class RiskManager:
             size = min(self.risk.max_position_usd, cash_usd * 0.95)
             if size < 10:
                 return RiskDecision(False, "Yetersiz nakit")
+            # gas ekonomisi: gas maliyeti pozisyonun makul bir oranını aşmamalı
+            gas_cost = gas.gas_cost_usd(signal.chain_id, gas.GAS_UNITS_SWAP)
+            if gas_cost > size * gas.MAX_GAS_FRACTION:
+                return RiskDecision(
+                    False,
+                    f"Gas ~{gas_cost:.2f}$ pozisyonun ({size:.0f}$) "
+                    f"%{gas.MAX_GAS_FRACTION * 100:.0f}'ından fazla - işlem ekonomik değil")
             return RiskDecision(True, "onaylandı", size_usd=size)
 
         # SELL

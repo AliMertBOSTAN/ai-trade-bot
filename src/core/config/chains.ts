@@ -37,6 +37,33 @@ export const CHAINS: Record<ChainId, ChainConfig> = {
         quoter: UNIV3_QUOTER_V2,
         router: UNIV3_ROUTER_02,
         feeTiers: [500, 3000, 10000]
+      },
+      // --- ek DEX'ler (intra-chain arbitraj yüzeyini genişletir) ---
+      {
+        name: 'SushiSwap V2',
+        protocol: 'uniswap-v2',
+        factory: '0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac',
+        router: '0xd9e1ce17f2641f24ae83637ab66a2cce9ae25f30'
+      },
+      {
+        name: 'PancakeSwap V2',
+        protocol: 'uniswap-v2',
+        factory: '0x1097053fd2ea711dad45caccc45eff7548fcb362',
+        router: '0xeff92a263d31888d860bd50809a8d171709b7b1c'
+      },
+      {
+        name: 'PancakeSwap V3',
+        protocol: 'uniswap-v3',
+        factory: '0x0bfbcf9fa4f9c56b0f40a671ad40e0805a091865',
+        quoter: '0xb048bbc1ee6b733fffcfb9e9cef7375518e25997',
+        router: '0x1b81d678ffb9c0263b24a97847620c99d213eb14',
+        feeTiers: [100, 500, 2500, 10000]
+      },
+      {
+        name: 'ShibaSwap',
+        protocol: 'uniswap-v2',
+        factory: '0x115934131916c8b277dd010ee02de363c09d037c',
+        router: '0x03f7724180aa6b939894b5ca4314783b0b36b329'
       }
     ],
     tokens: [
@@ -149,6 +176,33 @@ export const CHAINS: Record<ChainId, ChainConfig> = {
         quoter: '0xb048bbc1ee6b733fffcfb9e9cef7375518e25997',
         router: '0x13f4ea83d0bd40e75c8222255bc855a974568dd4',
         feeTiers: [500, 2500, 10000]
+      },
+      // --- ek DEX'ler (intra-chain arbitraj yüzeyini genişletir) ---
+      {
+        name: 'Uniswap V3',
+        protocol: 'uniswap-v3',
+        factory: '0xdb1d10011ad0ff90774d0c6bb92e5c5c8b4461f7',
+        quoter: '0x78d78e420da98ad378d7799be8f4af69033eb077',
+        router: '0xb971ef87ede563556b2ed4b1c0b0019111dd85d2',
+        feeTiers: [100, 500, 3000, 10000]
+      },
+      {
+        name: 'SushiSwap V2',
+        protocol: 'uniswap-v2',
+        factory: '0xc35dadb65012ec5796536bd9864ed8773abc74c4',
+        router: '0x1b02da8cb0d097eb8d57a175b88c7d8b47997506'
+      },
+      {
+        name: 'Biswap',
+        protocol: 'uniswap-v2',
+        factory: '0x858e3312ed3a876947ea49d572a7c42de08af7ee',
+        router: '0x3a6d8ca21d1cf76f653a67577fa0d27453350dd8'
+      },
+      {
+        name: 'ApeSwap',
+        protocol: 'uniswap-v2',
+        factory: '0x0841bd0b734e4f5853f0dd8d7ea041c241fb0da6',
+        router: '0xcf0febd3f17cef5b47b0cd257acf6025c5bff3b7'
       }
     ],
     tokens: [

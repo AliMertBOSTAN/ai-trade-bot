@@ -93,6 +93,48 @@ export interface TechnicalSnapshot {
   macdSignal: number
   momentum: number
   price: number
+  // Python (asdict) snake_case gönderir; runtime JSON ile hizalı opsiyonel alanlar:
+  ema_fast?: number
+  ema_slow?: number
+  macd_signal?: number
+  // --- genişletilmiş klasik göstergeler (opsiyonel) ---
+  sma_20?: number
+  roc?: number
+  stoch_k?: number
+  stoch_d?: number
+  stoch_rsi?: number
+  cci?: number
+  williams_r?: number
+  bb_upper?: number
+  bb_lower?: number
+  bb_mid?: number
+  bb_pct_b?: number
+  bb_bandwidth?: number
+  atr?: number
+  adx?: number
+  plus_di?: number
+  minus_di?: number
+  obv?: number
+  vwap?: number
+  mfi?: number
+  // --- gelişmiş / TradingView göstergeleri (opsiyonel) ---
+  supertrend?: number
+  supertrend_dir?: number
+  ichimoku_tenkan?: number
+  ichimoku_kijun?: number
+  ichimoku_senkou_a?: number
+  ichimoku_senkou_b?: number
+  psar?: number
+  psar_dir?: number
+  keltner_upper?: number
+  keltner_lower?: number
+  donchian_upper?: number
+  donchian_lower?: number
+  awesome?: number
+  squeeze_on?: number
+  squeeze_momentum?: number
+  wavetrend1?: number
+  wavetrend2?: number
 }
 
 export interface TradeSignal {
@@ -286,4 +328,33 @@ export interface NewsItem {
   summary: string
   link: string
   ts: number
+}
+
+// ---- Canlı gas (zincir başına) ----
+export interface GasInfo {
+  chain_id: number
+  chain: string
+  gwei: number
+  swap_usd: number
+}
+
+// ---- LLM analist raporu (/analyst) ----
+export interface AnalystLlm {
+  sentiment?: 'BULLISH' | 'BEARISH' | 'NEUTRAL'
+  confidence?: number
+  summary?: string
+  cex_dex_view?: string
+  news_impact?: string
+  risks?: string[]
+  raw?: string
+  note?: string
+}
+
+export interface AnalystReport {
+  symbol: string
+  ts: number
+  market: MarketSnapshot
+  headlines: NewsItem[]
+  llm: AnalystLlm | null
+  llm_used: boolean
 }

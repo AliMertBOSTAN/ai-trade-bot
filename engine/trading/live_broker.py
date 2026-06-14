@@ -16,6 +16,7 @@ from eth_account import Account
 
 from engine.config.chains import Chain, get_chain
 from engine.config.settings import RiskConfig, settings
+from engine.dex import gas
 from engine.dex.abis import (ERC20_ABI, V2_ROUTER_ABI, V3_QUOTER_V2_ABI,
                              V3_ROUTER_02_ABI)
 from engine.models import TradeOrder
@@ -120,7 +121,10 @@ class LiveBroker:
             out_human = out / (10 ** token_out.decimals)
             in_human = amount_in / (10 ** token_in.decimals)
             order.filled_price = (in_human / out_human) if order.side == "SELL" else (in_human / out_human)
-            order.fee_usd = in_human * 0.003
+            # toplam ücret = DEX swap fee + ağ gas ücreti (gas HER ZAMAN dahil)
+            swap_fee = in_human * 0.003
+            gas_fee = gas.gas_cost_usd(order.chain_id, gas.GAS_UNITS_SWAP)
+            order.fee_usd = swap_fee + gas_fee
             self.portfolio.apply_fill(order)
         except Exception as e:
             order.status = "failed"

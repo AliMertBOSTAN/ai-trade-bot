@@ -8,16 +8,20 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from engine.config.chains import CHAINS
 from engine.config.settings import RiskConfig
+from engine.dex import gas
 from engine.models import ArbitrageOpportunity, PriceQuote
 
-# Zincir başına tek-bacak gas maliyeti tahmini (USD). Gerçekte canlı gas
-# oracle'dan çekilir; burada konservatif sabitler kullanıyoruz.
-GAS_COST_USD = {1: 18.0, 42161: 0.25, 8453: 0.10, 10: 0.15, 56: 0.30, 137: 0.02}
 
-
-def _gas(chain_id: int) -> float:
-    return GAS_COST_USD.get(chain_id, 1.0)
+def _native_usd_map(quotes: list[PriceQuote]) -> dict[int, float]:
+    """Oracle fiyatlarından zincir başına native token USD fiyatı (gas için)."""
+    out: dict[int, float] = {}
+    for cid, ch in CHAINS.items():
+        nu = gas.native_usd_from_quotes(quotes, cid, ch.wrapped_native.symbol)
+        if nu:
+            out[cid] = nu
+    return out
 
 
 def scan_arbitrage(quotes: list[PriceQuote], risk: RiskConfig,
@@ -26,6 +30,7 @@ def scan_arbitrage(quotes: list[PriceQuote], risk: RiskConfig,
     for q in quotes:
         by_base[q.base].append(q)
 
+    native_usd = _native_usd_map(quotes)
     opps: list[ArbitrageOpportunity] = []
     slippage = risk.slippage_bps / 10_000.0
 
@@ -46,7 +51,11 @@ def scan_arbitrage(quotes: list[PriceQuote], risk: RiskConfig,
 
         gross = usable * spread_pct
         slippage_cost = usable * slippage * 2     # alış + satış
-        gas_cost = _gas(buy.chain_id) + _gas(sell.chain_id)
+        # canlı gas: al bacağı + sat bacağı (native fiyat oracle'dan, yoksa fallback)
+        gas_cost = (
+            gas.gas_cost_usd(buy.chain_id, gas.GAS_UNITS_ARB_LEG, native_usd.get(buy.chain_id))
+            + gas.gas_cost_usd(sell.chain_id, gas.GAS_UNITS_ARB_LEG, native_usd.get(sell.chain_id))
+        )
         # zincirler arası ise köprü maliyeti yaklaşığı
         bridge_cost = 0.0 if buy.chain_id == sell.chain_id else usable * 0.0010
         net = gross - slippage_cost - gas_cost - bridge_cost

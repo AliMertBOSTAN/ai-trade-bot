@@ -6,6 +6,7 @@ fee modeliyle doldurur. Aynı arayüzü live broker ile paylaşır.
 from __future__ import annotations
 
 from engine.config.settings import RiskConfig
+from engine.dex import gas
 from engine.models import TradeOrder
 from engine.trading.portfolio import Portfolio
 
@@ -30,7 +31,11 @@ class PaperBroker:
 
         notional = order.amount * fill
         order.filled_price = fill
-        order.fee_usd = notional * TAKER_FEE_PCT
+        # toplam ücret = DEX swap fee + ağ gas ücreti (gas HER ZAMAN dahil)
+        swap_fee = notional * TAKER_FEE_PCT
+        gas_fee = gas.gas_cost_usd(order.chain_id, gas.GAS_UNITS_SWAP)
+        order.fee_usd = swap_fee + gas_fee
+        order.reason = f"swap≈{swap_fee:.2f}$ + gas≈{gas_fee:.2f}$"
         order.status = "filled"
         order.tx_hash = "PAPER"
         self.portfolio.apply_fill(order)

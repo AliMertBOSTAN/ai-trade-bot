@@ -11,6 +11,7 @@ import html
 import logging
 import re
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 
 from engine.config.settings import settings
@@ -23,6 +24,8 @@ DEFAULT_FEEDS = [
     "https://cointelegraph.com/rss",
     "https://decrypt.co/feed",
     "https://thedefiant.io/api/feed",
+    "https://tr.investing.com/rss/news.rss",   # Investing.com TR (genel haber)
+    "https://ninjanews.io/feed/",              # Ninja News (TR kripto, WordPress RSS)
 ]
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -34,6 +37,26 @@ def _clean(text: str | None) -> str:
     return html.unescape(_TAG_RE.sub("", text)).strip()
 
 
+def _parse_date(pub: str | None) -> int:
+    """RSS pubDate -> epoch ms. RFC822'yi ve Investing.com'un
+    'YYYY-MM-DD HH:MM:SS' biçimini tolere eder; başarısızsa 0 döner."""
+    if not pub:
+        return 0
+    pub = pub.strip()
+    # 1) Standart RFC822 (CoinDesk, Cointelegraph, WordPress vb.)
+    try:
+        return int(parsedate_to_datetime(pub).timestamp() * 1000)
+    except Exception:
+        pass
+    # 2) Investing.com biçimi: '2026-04-04 16:01:58' (+ opsiyonel tz)
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S%z", "%Y-%m-%dT%H:%M:%S%z"):
+        try:
+            return int(datetime.strptime(pub, fmt).timestamp() * 1000)
+        except Exception:
+            continue
+    return 0
+
+
 def _parse_feed(xml_text: str, source: str) -> list[dict]:
     """RSS 2.0 ve Atom'u tolere ederek başlıkları çıkar."""
     items: list[dict] = []
@@ -41,13 +64,7 @@ def _parse_feed(xml_text: str, source: str) -> list[dict]:
     ns = {"atom": "http://www.w3.org/2005/Atom"}
 
     for item in root.iter("item"):  # RSS 2.0
-        ts = 0
-        pub = item.findtext("pubDate")
-        if pub:
-            try:
-                ts = int(parsedate_to_datetime(pub).timestamp() * 1000)
-            except Exception:
-                pass
+        ts = _parse_date(item.findtext("pubDate"))
         items.append({
             "source": source,
             "title": _clean(item.findtext("title")),

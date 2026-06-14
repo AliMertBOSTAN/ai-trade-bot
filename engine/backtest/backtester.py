@@ -25,6 +25,9 @@ def _mk_signal(base, quote, action, conf, tech) -> TradeSignal:
 def run_backtest(candles: list[dict], base: str, quote: str,
                  starting_cash: float, risk: RiskConfig) -> dict:
     closes = [c["close"] for c in candles]
+    highs = [c.get("high", c["close"]) for c in candles]
+    lows = [c.get("low", c["close"]) for c in candles]
+    volumes = [c.get("volume", 0.0) for c in candles]
     if len(closes) < 40:
         raise ValueError("Backtest için en az 40 mum gerekli")
 
@@ -42,7 +45,9 @@ def run_backtest(candles: list[dict], base: str, quote: str,
     for i in range(warmup, len(closes)):
         window = closes[: i + 1]
         price = closes[i]
-        tech = compute_snapshot(window)
+        tech = compute_snapshot(
+            window, highs[: i + 1], lows[: i + 1], volumes[: i + 1]
+        )
         action, conf = _rule_decision(tech)
 
         portfolio.mark({key: price})

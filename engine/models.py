@@ -56,6 +56,7 @@ class ArbitrageOpportunity:
 
 @dataclass
 class TechnicalSnapshot:
+    # --- temel (eski alanlar; geriye dönük uyumlu) ---
     rsi: float
     ema_fast: float
     ema_slow: float
@@ -63,6 +64,44 @@ class TechnicalSnapshot:
     macd_signal: float
     momentum: float
     price: float
+    # --- genişletilmiş klasik göstergeler (varsayılanlı) ---
+    sma_20: float = 0.0
+    roc: float = 0.0
+    stoch_k: float = 50.0
+    stoch_d: float = 50.0
+    stoch_rsi: float = 50.0
+    cci: float = 0.0
+    williams_r: float = -50.0
+    bb_upper: float = 0.0
+    bb_lower: float = 0.0
+    bb_mid: float = 0.0
+    bb_pct_b: float = 50.0
+    bb_bandwidth: float = 0.0
+    atr: float = 0.0
+    adx: float = 0.0
+    plus_di: float = 0.0
+    minus_di: float = 0.0
+    obv: float = 0.0
+    vwap: float = 0.0
+    mfi: float = 50.0
+    # --- gelişmiş / TradingView göstergeleri ---
+    supertrend: float = 0.0
+    supertrend_dir: float = 0.0
+    ichimoku_tenkan: float = 0.0
+    ichimoku_kijun: float = 0.0
+    ichimoku_senkou_a: float = 0.0
+    ichimoku_senkou_b: float = 0.0
+    psar: float = 0.0
+    psar_dir: float = 0.0
+    keltner_upper: float = 0.0
+    keltner_lower: float = 0.0
+    donchian_upper: float = 0.0
+    donchian_lower: float = 0.0
+    awesome: float = 0.0
+    squeeze_on: float = 0.0
+    squeeze_momentum: float = 0.0
+    wavetrend1: float = 0.0
+    wavetrend2: float = 0.0
 
     def to_dict(self) -> dict:
         return asdict(self)

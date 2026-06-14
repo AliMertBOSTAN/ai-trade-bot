@@ -199,7 +199,7 @@ body {
 /* ---- KPI kartları ---- */
 .kpis {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 13px;
   margin: 18px 0;
 }
@@ -466,6 +466,386 @@ body {
   color: #c4cede;
 }
 
+/* ===================================================================== */
+/*  Yeni: gas chip, sekmeler, göstergeler, piyasa, haber, analist        */
+/* ===================================================================== */
+
+.mono {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, Menlo, monospace;
+}
+
+/* gas chip (üst bar) */
+.gaschip {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #cdd7e6;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  padding: 4px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* sekmeler */
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 16px;
+  flex-wrap: wrap;
+}
+.tab {
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.tab:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+.tab.active {
+  background: linear-gradient(135deg, var(--accent), #4d8df5);
+  color: #021026;
+  border-color: transparent;
+}
+.pill {
+  background: rgba(251, 113, 133, 0.85);
+  color: #2b040c;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.tab.active .pill {
+  background: #021026;
+  color: #fff;
+}
+
+/* ---- gas listesi (overview) ---- */
+.gaslist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gasrow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+/* ---- gösterge ızgarası (sinyaller) ---- */
+.siglist {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sigcard {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.sigcard:hover {
+  border-color: var(--border-hover);
+}
+.sigcard-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.sig-rat {
+  margin-left: auto;
+  text-align: right;
+}
+.ind-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+}
+.ind {
+  border-radius: 9px;
+  padding: 8px 6px;
+  text-align: center;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+.ind-label {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.ind-value {
+  font-size: 16px;
+  font-weight: 800;
+  margin-top: 3px;
+}
+.ind.pos {
+  border-color: rgba(52, 211, 153, 0.3);
+  background: rgba(52, 211, 153, 0.07);
+}
+.ind.pos .ind-value {
+  color: var(--pos);
+}
+.ind.neg {
+  border-color: rgba(251, 113, 133, 0.3);
+  background: rgba(251, 113, 133, 0.07);
+}
+.ind.neg .ind-value {
+  color: var(--neg);
+}
+
+/* ---- arbitraj listesi ---- */
+.arblist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 12px;
+}
+.arblist .arb {
+  border-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.arb-top {
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- piyasa kartları ---- */
+.mgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 13px;
+}
+.mcard {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.mcard:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+.mcard-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.sym {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+.chg {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.chg.pos {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--pos);
+}
+.chg.neg {
+  background: rgba(251, 113, 133, 0.12);
+  color: var(--neg);
+}
+.mrow {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.mrow .mk {
+  color: var(--muted);
+}
+.mrow .mv {
+  font-weight: 700;
+}
+.mspread {
+  margin: 8px 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 9px;
+  border-radius: 7px;
+  text-align: center;
+}
+.mspread.pos {
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--pos);
+}
+.mspread.neg {
+  background: rgba(251, 113, 133, 0.1);
+  color: var(--neg);
+}
+.mspread.neu {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+}
+.mmeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ---- haber paneli ---- */
+.news {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+.news-item {
+  display: block;
+  text-decoration: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 12px 14px;
+  transition: border-color 0.16s ease, transform 0.16s ease;
+}
+.news-item:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+.news-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.news-title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.news-sum {
+  margin-top: 5px;
+  line-height: 1.45;
+}
+
+/* ---- AI analist ---- */
+.analyst-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.analyst-bar select {
+  background: var(--panel-solid);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sentiment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 17px;
+  font-weight: 800;
+  padding: 6px 14px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+.sentiment.pos {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--pos);
+}
+.sentiment.neg {
+  background: rgba(251, 113, 133, 0.12);
+  color: var(--neg);
+}
+.sentiment.neu {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+.analyst-summary {
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 6px 0 16px;
+}
+.analyst-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.acard {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 12px 15px;
+}
+.acard h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #9fb0c9;
+}
+.acard p,
+.acard li {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #c7d0de;
+}
+.acard ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.callout {
+  background: rgba(106, 166, 255, 0.08);
+  border: 1px solid rgba(106, 166, 255, 0.25);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  margin-bottom: 14px;
+}
+.analyst-raw {
+  white-space: pre-wrap;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 11.5px;
+  color: #aeb9cc;
+  overflow: auto;
+}
+
+@media (max-width: 1100px) {
+  .kpis {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
 @media (max-width: 1000px) {
   .kpis {
     grid-template-columns: repeat(2, 1fr);

@@ -70,3 +70,39 @@ class Portfolio:
             "realized_pnl_usd": self.realized_pnl_usd,
             "unrealized_pnl_usd": unreal,
         }
+
+    def to_persist(self) -> dict:
+        """Kalıcılık için sade temsil (snapshot'tan farklı: equity'siz, türetilebilir alansız)."""
+        return {
+            "cash_usd": self.cash_usd,
+            "realized_pnl_usd": self.realized_pnl_usd,
+            "positions": [
+                {
+                    "chain_id": p.chain_id,
+                    "base": p.base,
+                    "quote": p.quote,
+                    "amount": p.amount,
+                    "avg_entry": p.avg_entry,
+                    "realized_pnl_usd": p.realized_pnl_usd,
+                    "last_price": p.last_price,
+                }
+                for p in self.positions.values()
+            ],
+        }
+
+    def load_persist(self, data: dict) -> None:
+        """to_persist çıktısını portföye uygular (yerinde geri yükleme)."""
+        self.cash_usd = float(data.get("cash_usd", self.cash_usd))
+        self.realized_pnl_usd = float(data.get("realized_pnl_usd", 0.0))
+        self.positions = {}
+        for pd in data.get("positions", []):
+            pos = Position(
+                chain_id=int(pd["chain_id"]),
+                base=str(pd["base"]),
+                quote=str(pd.get("quote", "USD")),
+                amount=float(pd["amount"]),
+                avg_entry=float(pd["avg_entry"]),
+                realized_pnl_usd=float(pd.get("realized_pnl_usd", 0.0)),
+                last_price=float(pd.get("last_price", pd["avg_entry"])),
+            )
+            self.positions[pos.key] = pos

@@ -12,8 +12,13 @@
 from __future__ import annotations
 
 from engine.indicators.technical import compute_snapshot
+from engine.marketdata import news as market_news
 from engine.models import TechnicalSnapshot, TradeSignal
 from engine.signals import llm
+
+# Güven harmanı ağırlıkları (haber varsa). Toplam = 1.0
+W_TECHNICAL = 0.70
+W_NEWS = 0.30
 
 
 def _clamp(x: float, lo: float = -1.0, hi: float = 1.0) -> float:
@@ -107,6 +112,41 @@ def _rule_decision(t: TechnicalSnapshot) -> tuple[str, float]:
     return "HOLD", 1.0 - abs(score)
 
 
+def decide(t: TechnicalSnapshot) -> tuple[str, float]:
+    """Kural-tabanlı (LLM'siz) kararın public arayüzü -> (action, confidence)."""
+    return _rule_decision(t)
+
+
+def rolling_markers(closes: list[float],
+                    highs: list[float] | None = None,
+                    lows: list[float] | None = None,
+                    volumes: list[float] | None = None,
+                    min_bars: int = 31) -> list[dict]:
+    """Her mumda kural-tabanlı kararı hesaplar; aksiyon DEĞİŞİMİNDE işaret üretir.
+
+    Chart üzerinde geçmiş BUY/SELL oklarını çizmek için kullanılır. Yalnızca
+    custom indikatör katmanına dayanır (LLM yok) -> hızlı ve maliyetsiz.
+    Dönüş: [{"index": int, "action": "BUY"|"SELL", "confidence": float}]
+    """
+    n = len(closes)
+    markers: list[dict] = []
+    prev: str | None = None
+    for i in range(min_bars, n + 1):
+        tech = compute_snapshot(
+            closes[:i],
+            highs[:i] if highs else None,
+            lows[:i] if lows else None,
+            volumes[:i] if volumes else None,
+        )
+        action, conf = _rule_decision(tech)
+        if action in ("BUY", "SELL"):
+            if action != prev:
+                markers.append({"index": i - 1, "action": action,
+                                "confidence": round(conf, 3)})
+            prev = action
+    return markers
+
+
 def _returns(closes: list[float]) -> list[float]:
     out = []
     for i in range(1, len(closes)):
@@ -122,36 +162,83 @@ def generate_signal(chain_id: int, base: str, quote: str,
                     volumes: list[float] | None = None) -> TradeSignal:
     tech = compute_snapshot(closes, highs, lows, volumes)
     rule_action, rule_conf = _rule_decision(tech)
+    action = rule_action
 
-    # LLM katmanı (hibrit)
-    advice = llm.advise(base, quote, tech, rule_action, _returns(closes))
+    # --- Haber katmanı (LLM'siz sentiment) ---
+    try:
+        news = market_news.sentiment(base)
+    except Exception:
+        news = {"score": 0.0, "label": "nötr", "count": 0, "matched": 0,
+                "market": True, "headlines": []}
+    news_score = float(news["score"])
 
-    if advice and advice.get("action") in ("BUY", "SELL", "HOLD"):
-        llm_action = advice["action"]
-        llm_conf = float(advice.get("confidence", 0.5))
-        rationale = advice.get("rationale", "")
-        # Hibrit füzyon: iki katman hemfikirse güveni yükselt, çelişirse düşür
-        if llm_action == rule_action:
-            action = rule_action
-            confidence = min(1.0, 0.5 * rule_conf + 0.5 * llm_conf + 0.1)
-        else:
-            # çelişki -> daha temkinli olan LLM kararını al, güveni kıs
-            action = llm_action
-            confidence = max(0.0, 0.5 * llm_conf)
-        source = "hybrid"
+    # --- LLM katmanı (haber bağlamıyla; opsiyonel) ---
+    news_summary = (f"{news['label']} ({news_score:+.2f})"
+                    + (f"; örnek: {news['headlines'][0]}" if news["headlines"] else ""))
+    advice = llm.advise(base, quote, tech, rule_action, _returns(closes), news_summary)
+    llm_action = advice.get("action") if advice else None
+    llm_used = llm_action in ("BUY", "SELL", "HOLD")
+
+    # --- Teknik özet (her zaman gösterilir) ---
+    trend_dir = "yukarı" if tech.supertrend_dir >= 0 else "aşağı"
+    tech_state = (f"RSI={tech.rsi:.0f}, ADX={tech.adx:.0f}, Supertrend={trend_dir}, "
+                  f"BB%B={tech.bb_pct_b:.0f}, mom={tech.momentum:.1f}%")
+
+    # --- Güven harmanı: teknik (kural skoru) + haber (aksiyona hizalı) ---
+    tech_component = rule_conf                      # 0..1
+    if action == "BUY":
+        news_align = news_score
+    elif action == "SELL":
+        news_align = -news_score
     else:
-        action = rule_action
-        confidence = rule_conf
-        trend_dir = "yukarı" if tech.supertrend_dir >= 0 else "aşağı"
-        rationale = (
-            f"RSI={tech.rsi:.0f}, StochRSI={tech.stoch_rsi:.0f}, "
-            f"ADX={tech.adx:.0f}, Supertrend={trend_dir}, "
-            f"BB%B={tech.bb_pct_b:.0f}, mom={tech.momentum:.1f}%"
-        )
-        source = "technical"
+        news_align = 0.0
+    news_component = (1.0 + news_align) / 2.0        # 0..1
+
+    if news["count"] > 0 and action != "HOLD":
+        confidence = W_TECHNICAL * tech_component + W_NEWS * news_component
+        weights = {"technical": W_TECHNICAL, "news": W_NEWS}
+    else:
+        confidence = tech_component
+        weights = {"technical": 1.0, "news": 0.0}
+
+    # --- LLM modülasyonu (şeffaf): onay küçük artırır, çelişki işlemi kısar ---
+    llm_note = "yok"
+    if llm_used:
+        if llm_action == action:
+            confidence = min(1.0, confidence + 0.05)
+            llm_note = "onayladı (+5%)"
+        else:
+            confidence = min(confidence, 0.50)
+            llm_note = f"çelişki → {llm_action} (kısıldı)"
+
+    confidence = _clamp(confidence, 0.0, 1.0)
+    source = "hybrid" if llm_used else "technical"
+
+    news_state = (f"haber {news['label']} ({news_score:+.2f}, {news['count']} başlık"
+                  + (" · piyasa geneli" if news["market"] else "") + ")")
+    rationale = f"{tech_state} | {news_state}"
+    if llm_used and advice.get("rationale"):
+        rationale = f"{advice['rationale']} || {rationale}"
+
+    breakdown = {
+        "technicalScore": round(tech_component, 3),
+        "technicalState": tech_state,
+        "newsScore": round(news_score, 3),
+        "newsLabel": news["label"],
+        "newsCount": news["count"],
+        "newsMatched": news["matched"],
+        "newsMarket": news["market"],
+        "newsHeadlines": news["headlines"],
+        "weights": weights,
+        "llmUsed": llm_used,
+        "llmAction": llm_action,
+        "llmNote": llm_note,
+        "finalConfidence": round(confidence, 3),
+    }
 
     return TradeSignal(
         chain_id=chain_id, base=base, quote=quote,
         action=action, confidence=confidence,
         technical=tech, rationale=rationale, source=source,
+        breakdown=breakdown,
     )

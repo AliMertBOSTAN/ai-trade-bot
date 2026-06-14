@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, connectEvents } from './api'
 import EquityChart from './components/EquityChart'
+import TechnicalChart from './components/TechnicalChart'
 import Indicators from './components/Indicators'
 import MarketPanel from './components/MarketPanel'
 import NewsPanel from './components/NewsPanel'
@@ -36,8 +37,14 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'trades', label: 'İşlemler' }
 ]
 
-const usd = (n: number): string =>
-  n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })
+const usd = (n: number | null | undefined): string =>
+  Number.isFinite(n)
+    ? (n as number).toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 2
+      })
+    : '—'
 
 export default function App(): JSX.Element {
   const [state, setState] = useState<BotState>({ status: 'stopped', mode: 'paper', lastTick: 0 })
@@ -98,7 +105,14 @@ export default function App(): JSX.Element {
     const off = connectEvents((e) => {
       if (e.type === 'tick') setState(e.state)
       else if (e.type === 'signal') setSignals((p) => [e.signal, ...p].slice(0, 40))
-      else if (e.type === 'trade') setTrades((p) => [e.order, ...p].slice(0, 60))
+      else if (e.type === 'trade') {
+        setTrades((p) => [e.order, ...p].slice(0, 60))
+        const o = e.order
+        pushLog(
+          `İŞLEM ${o.side} ${o.amount.toFixed(4)} ${o.base} @ ${usd(o.filledPrice || o.price)}` +
+            (o.reason ? ` — ${o.reason}` : '')
+        )
+      }
       else if (e.type === 'arbitrage') setArbs((p) => [e.opp, ...p].slice(0, 20))
       else if (e.type === 'log') pushLog(`[${e.level}] ${e.message}`)
     })
@@ -212,10 +226,17 @@ function Overview({
 }): JSX.Element {
   return (
     <div className="grid">
-      <div className="card span2">
+      <div className="card">
         <h3>Equity Eğrisi</h3>
         <div className="chartbox">
           <EquityChart data={equity} />
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Teknik Analiz</h3>
+        <div className="chartbox">
+          <TechnicalChart />
         </div>
       </div>
 
@@ -310,23 +331,79 @@ function Overview({
   )
 }
 
+const TRADE_THRESHOLD = 80 // emin olma eşiği (%) — üzerindekilere işlem açılır
+
+function SignalBreakdownView({ s }: { s: TradeSignal }): JSX.Element | null {
+  const b = s.breakdown
+  if (!b) return null
+  const conf = Math.round(b.finalConfidence * 100)
+  const willTrade = conf >= TRADE_THRESHOLD && s.action !== 'HOLD'
+  const techPct = Math.round(b.technicalScore * 100)
+  const newsCls = b.newsLabel === 'pozitif' ? 'pos' : b.newsLabel === 'negatif' ? 'neg' : 'muted'
+  return (
+    <div className="sig-bd">
+      <div className="sig-bd-row">
+        <span className="sig-bd-k">Teknik</span>
+        <div className="sig-bd-bar">
+          <div className="sig-bd-fill tech" style={{ width: `${techPct}%` }} />
+        </div>
+        <span className="sig-bd-v">
+          {techPct}% <span className="muted">×{b.weights.technical}</span>
+        </span>
+      </div>
+      <div className="sig-bd-row">
+        <span className="sig-bd-k">Haber</span>
+        <span className={`sig-bd-v ${newsCls}`}>
+          {b.newsLabel} ({b.newsScore >= 0 ? '+' : ''}
+          {b.newsScore.toFixed(2)})
+        </span>
+        <span className="muted small">
+          {b.newsCount} başlık{b.newsMarket ? ' · piyasa geneli' : ` · ${b.newsMatched} ${s.base}`} ·
+          ×{b.weights.news}
+        </span>
+      </div>
+      {b.llmUsed && (
+        <div className="sig-bd-row">
+          <span className="sig-bd-k">LLM</span>
+          <span className="sig-bd-v muted small">{b.llmNote}</span>
+        </div>
+      )}
+      <div className={`sig-bd-final ${willTrade ? 'pos' : 'muted'}`}>
+        Emin olma: <b>{conf}%</b> {willTrade ? '✓ işlem açılır' : `· eşik %${TRADE_THRESHOLD} altı`}
+      </div>
+      {b.newsHeadlines.length > 0 && (
+        <div className="sig-bd-news">
+          {b.newsHeadlines.map((h, i) => (
+            <div key={i} className="muted small">
+              • {h}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SignalsView({ signals }: { signals: TradeSignal[] }): JSX.Element {
   if (!signals.length) return <div className="muted card">sinyal yok — bot çalışıyor mu?</div>
   return (
     <div className="siglist">
-      {signals.slice(0, 16).map((s) => (
-        <div className="sigcard" key={s.id}>
-          <div className="sigcard-head">
-            <span className={`tag ${s.action.toLowerCase()}`}>{s.action}</span>
-            <b>{s.base}</b>
-            <span className="muted small">
-              {(s.confidence * 100).toFixed(0)}% · {s.source}
-            </span>
-            <span className="muted small sig-rat">{s.rationale}</span>
+      {signals.slice(0, 16).map((s) => {
+        const conf = Math.round((s.breakdown?.finalConfidence ?? s.confidence) * 100)
+        const willTrade = conf >= TRADE_THRESHOLD && s.action !== 'HOLD'
+        return (
+          <div className={`sigcard ${willTrade ? 'trade' : ''}`} key={s.id}>
+            <div className="sigcard-head">
+              <span className={`tag ${s.action.toLowerCase()}`}>{s.action}</span>
+              <b>{s.base}</b>
+              <span className={`sig-conf ${willTrade ? 'pos' : 'muted'}`}>{conf}%</span>
+              <span className="muted small">{s.source}</span>
+            </div>
+            <SignalBreakdownView s={s} />
+            <Indicators tech={s.technical} />
           </div>
-          <Indicators tech={s.technical} />
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -370,6 +447,7 @@ function TradesView({ trades, logs }: { trades: TradeOrder[]; logs: string[] }):
                 <th>Fiyat</th>
                 <th>Ücret</th>
                 <th>Durum</th>
+                <th>Neden</th>
               </tr>
             </thead>
             <tbody>
@@ -385,11 +463,14 @@ function TradesView({ trades, logs }: { trades: TradeOrder[]; logs: string[] }):
                   <td className={t.status === 'filled' ? 'pos' : t.status === 'failed' ? 'neg' : ''}>
                     {t.status}
                   </td>
+                  <td className="muted small reason" title={t.reason ?? ''}>
+                    {t.reason ?? '—'}
+                  </td>
                 </tr>
               ))}
               {!trades.length && (
                 <tr>
-                  <td colSpan={8} className="muted">
+                  <td colSpan={9} className="muted">
                     işlem yok
                   </td>
                 </tr>

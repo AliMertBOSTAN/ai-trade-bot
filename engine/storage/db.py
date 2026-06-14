@@ -1,4 +1,8 @@
-"""SQLite kalıcı depolama (işlemler, sinyaller, equity eğrisi, arbitraj)."""
+"""SQLite kalıcı depolama (işlemler, sinyaller, equity eğrisi, arbitraj).
+
+state.json: portföy + bot modu + çalışma durumu için git-friendly snapshot.
+SQLite (bot.db): tick başı yoğun yazım; istenirse .gitignore'a alınabilir.
+"""
 from __future__ import annotations
 
 import json
@@ -7,8 +11,10 @@ import sqlite3
 import threading
 from typing import Any
 
-_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                        "data", "bot.db")
+_DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+_DB_PATH = os.path.join(_DATA_DIR, "bot.db")
+_STATE_PATH = os.path.join(_DATA_DIR, "state.json")
 
 
 class Store:
@@ -78,12 +84,48 @@ class Store:
     def recent_trades(self, limit: int = 100) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT * FROM trades ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
-        return [dict(r) for r in rows]
+        # Renderer ile hizalı camelCase (TS TradeOrder); ts -> timestamp.
+        return [{
+            "id": r["id"], "mode": r["mode"], "chainId": r["chain_id"],
+            "dex": r["dex"], "base": r["base"], "quote": r["quote"],
+            "side": r["side"], "amount": r["amount"], "price": r["price"],
+            "status": r["status"], "txHash": r["tx_hash"],
+            "filledPrice": r["filled_price"], "feeUsd": r["fee_usd"],
+            "reason": r["reason"], "signalId": r["signal_id"],
+            "timestamp": r["ts"],
+        } for r in rows]
 
     def equity_curve(self, limit: int = 500) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT ts, equity FROM equity ORDER BY ts ASC LIMIT ?", (limit,)).fetchall()
         return [{"t": r["ts"], "equity": r["equity"]} for r in rows]
+
+    # ---- state.json (git-friendly snapshot) ----
+    @property
+    def state_path(self) -> str:
+        return _STATE_PATH
+
+    def save_state(self, payload: dict) -> None:
+        """state.json'a atomik yazım (kısmi yazımdan korunma).
+
+        payload: {"portfolio": {...}, "mode": "...", "was_running": bool,
+                  "updated_at": int(ms)}
+        """
+        with self._lock:
+            os.makedirs(os.path.dirname(_STATE_PATH), exist_ok=True)
+            tmp = _STATE_PATH + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, sort_keys=True)
+            os.replace(tmp, _STATE_PATH)
+
+    def load_state(self) -> dict | None:
+        if not os.path.exists(_STATE_PATH):
+            return None
+        try:
+            with open(_STATE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
 
 
 store = Store()

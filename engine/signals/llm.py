@@ -27,9 +27,11 @@ SYSTEM_PROMPT = (
 
 
 def _build_user_prompt(base: str, quote: str, tech: TechnicalSnapshot,
-                       rule_action: str, recent_returns: list[float]) -> str:
+                       rule_action: str, recent_returns: list[float],
+                       news_summary: str = "") -> str:
     trend = "yukarı" if tech.ema_fast > tech.ema_slow else "aşağı"
     st_dir = "yukarı" if tech.supertrend_dir >= 0 else "aşağı"
+    news_line = f"Haber duyarlılığı: {news_summary}\n" if news_summary else ""
     return (
         f"Parite: {base}/{quote}\n"
         f"Fiyat: {tech.price:.6f}\n"
@@ -44,8 +46,10 @@ def _build_user_prompt(base: str, quote: str, tech: TechnicalSnapshot,
         f"WaveTrend: {tech.wavetrend1:.0f}/{tech.wavetrend2:.0f}  "
         f"AO: {tech.awesome:.4f}  Squeeze: {'AÇIK' if tech.squeeze_on else 'kapalı'}\n"
         f"Momentum(10): {tech.momentum:.2f}%\n"
+        f"{news_line}"
         f"Son getiriler (%): {[round(r, 2) for r in recent_returns[-8:]]}\n"
         f"Kural tabanlı ön karar: {rule_action}\n\n"
+        "Teknik tabloyu ve haber duyarlılığını birlikte değerlendir. "
         "Nihai kararını JSON olarak ver."
     )
 
@@ -69,6 +73,20 @@ def complete(system_prompt: str, user_prompt: str,
     """
     provider = settings.llm_provider
     try:
+        if provider == "deepseek" and settings.deepseek_api_key:
+            from openai import OpenAI
+            client = OpenAI(api_key=settings.deepseek_api_key,
+                            base_url=settings.deepseek_base_url)
+            resp = client.chat.completions.create(
+                model=settings.deepseek_model,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            return resp.choices[0].message.content or ""
+
         if provider == "anthropic" and settings.anthropic_api_key:
             import anthropic
             client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -100,9 +118,10 @@ def complete(system_prompt: str, user_prompt: str,
 
 
 def advise(base: str, quote: str, tech: TechnicalSnapshot, rule_action: str,
-           recent_returns: list[float]) -> dict | None:
+           recent_returns: list[float], news_summary: str = "") -> dict | None:
     """{'action','confidence','rationale'} veya None döner."""
-    user_prompt = _build_user_prompt(base, quote, tech, rule_action, recent_returns)
+    user_prompt = _build_user_prompt(base, quote, tech, rule_action,
+                                     recent_returns, news_summary)
     text = complete(SYSTEM_PROMPT, user_prompt, max_tokens=200)
     if text is None:
         log.warning("LLM danışman yanıtı yok, teknik karara düşülüyor")

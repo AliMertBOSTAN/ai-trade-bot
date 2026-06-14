@@ -35,7 +35,9 @@ class PaperBroker:
         swap_fee = notional * TAKER_FEE_PCT
         gas_fee = gas.gas_cost_usd(order.chain_id, gas.GAS_UNITS_SWAP)
         order.fee_usd = swap_fee + gas_fee
-        order.reason = f"swap≈{swap_fee:.2f}$ + gas≈{gas_fee:.2f}$"
+        # Karar gerekçesi (orchestrator'da set edilir) korunur; yoksa ücret notu.
+        if not order.reason:
+            order.reason = f"swap≈{swap_fee:.2f}$ + gas≈{gas_fee:.2f}$"
         order.status = "filled"
         order.tx_hash = "PAPER"
         self.portfolio.apply_fill(order)

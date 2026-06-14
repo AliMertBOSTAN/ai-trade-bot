@@ -19,18 +19,21 @@ from __future__ import annotations
 from engine.indicators import technical as ta
 
 
-def supertrend(highs: list[float], lows: list[float], closes: list[float],
-               period: int = 10, mult: float = 3.0) -> tuple[float, float]:
-    """Supertrend -> (çizgi_değeri, yön).  yön: +1 yükseliş, -1 düşüş."""
+def supertrend_series(highs: list[float], lows: list[float], closes: list[float],
+                      period: int = 10, mult: float = 3.0
+                      ) -> list[tuple[float, float] | None]:
+    """Her mum için Supertrend -> [(çizgi, yön) | None].
+
+    Isınma (period kadar) mumlar None'dır; chart overlay'i bu mumları atlar.
+    yön: +1 yükseliş, -1 düşüş.
+    """
     n = len(closes)
+    out: list[tuple[float, float] | None] = [None] * n
     if n < period + 1:
-        return (closes[-1] if closes else 0.0), 0.0
+        return out
     trs = ta.true_range_series(highs, lows, closes)
     atr_s = ta._rma_series(trs, period)
     direction = 1.0
-    final_upper = 0.0
-    final_lower = 0.0
-    st = closes[period]
     prev_upper = prev_lower = 0.0
     for i in range(period, n):
         hl2 = (highs[i] + lows[i]) / 2
@@ -49,9 +52,19 @@ def supertrend(highs: list[float], lows: list[float], closes: list[float],
             direction = 1.0
         elif closes[i] < final_lower:
             direction = -1.0
-        st = final_lower if direction > 0 else final_upper
+        out[i] = (final_lower if direction > 0 else final_upper, direction)
         prev_upper, prev_lower = final_upper, final_lower
-    return st, direction
+    return out
+
+
+def supertrend(highs: list[float], lows: list[float], closes: list[float],
+               period: int = 10, mult: float = 3.0) -> tuple[float, float]:
+    """Supertrend -> (çizgi_değeri, yön).  yön: +1 yükseliş, -1 düşüş."""
+    series = supertrend_series(highs, lows, closes, period, mult)
+    for pt in reversed(series):
+        if pt is not None:
+            return pt
+    return (closes[-1] if closes else 0.0), 0.0
 
 
 def ichimoku(highs: list[float], lows: list[float], closes: list[float],

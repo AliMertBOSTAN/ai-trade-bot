@@ -117,6 +117,8 @@ class TradeSignal:
     technical: TechnicalSnapshot
     rationale: str
     source: str  # technical|llm|hybrid
+    # Güvenin nasıl hesaplandığı (teknik + haber kırılımı); camelCase, UI'da gösterilir.
+    breakdown: dict | None = None
     id: str = field(default_factory=_id)
     timestamp: int = field(default_factory=now_ms)
 
@@ -146,6 +148,18 @@ class TradeOrder:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def to_api(self) -> dict:
+        """Renderer ile hizalı camelCase temsil (TS TradeOrder)."""
+        return {
+            "id": self.id, "mode": self.mode, "chainId": self.chain_id,
+            "dex": self.dex, "base": self.base, "quote": self.quote,
+            "side": self.side, "amount": self.amount, "price": self.price,
+            "status": self.status, "txHash": self.tx_hash,
+            "filledPrice": self.filled_price, "feeUsd": self.fee_usd,
+            "reason": self.reason, "signalId": self.signal_id,
+            "timestamp": self.timestamp,
+        }
 
 
 @dataclass

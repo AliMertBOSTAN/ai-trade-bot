@@ -117,7 +117,52 @@ Bot, kendi zincir-üstü fiyatlamasına ek olarak herkese açık verileri okur
 - **DexScreener** — Uniswap v2/v3, PancakeSwap, QuickSwap havuz fiyat/likidite/hacim verisi; bilinen tokenlarda adres-tabanlı sorgu (`engine/marketdata/dexscreener.py`)
 - **CEX/DEX karşılaştırma** — aynı varlık için Binance vs Uniswap fiyatı, spread (bps), likidite bağlamı (`engine/marketdata/aggregator.py`)
 - **Anlık haberler** — CoinDesk/Cointelegraph/Decrypt/The Defiant RSS; `.env > NEWS_FEEDS` ile özelleştirilebilir (`engine/marketdata/news.py`)
-- **LLM piyasa analisti** — piyasa verisi + haberleri LLM'e verip yapılandırılmış yorum alır: sentiment, CEX/DEX uyum yorumu, haber etkisi, riskler (`engine/marketdata/analyst.py`). LLM key'i `.env`'den okunur (`LLM_PROVIDER` + `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`); key yoksa yalnızca sayısal rapor döner (fail-safe).
+- **LLM piyasa analisti** — piyasa verisi + haberleri LLM'e verip yapılandırılmış yorum alır: sentiment, CEX/DEX uyum yorumu, haber etkisi, riskler (`engine/marketdata/analyst.py`). LLM key'i `.env`'den okunur (`LLM_PROVIDER` + `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); key yoksa yalnızca sayısal rapor döner (fail-safe).
+
+### LLM sağlayıcı: DeepSeek (varsayılan)
+
+`.env` içinde:
+
+```
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_MODEL=deepseek-chat        # opsiyonel; "deepseek-reasoner" de seçilebilir
+DEEPSEEK_BASE_URL=https://api.deepseek.com  # opsiyonel
+```
+
+DeepSeek API'si OpenAI uyumludur; mevcut `openai` paketi `base_url` ile çağrılır
+(ek bağımlılık yok). Anahtarı [platform.deepseek.com](https://platform.deepseek.com)
+adresinden alabilirsiniz. `LLM_PROVIDER=anthropic` veya `openai` ile diğerlerine
+geçebilir, `none` ile LLM katmanını tamamen kapatabilirsiniz (bot teknik karara
+düşer — fail-safe).
+
+### Kaldığı yerden devam (snapshot kalıcılığı)
+
+Bot her trade, mod değişimi ve start/stop sonrası **portföy + mod + çalışma
+durumunu** `data/state.json` dosyasına yazar (atomik yazım). Engine yeniden
+başladığında:
+
+- `state.json` varsa: portföy (nakit, pozisyonlar, realized PnL) ve mod
+  geri yüklenir; `was_running=true` ise bot otomatik başlatılır.
+- `state.json` yoksa: `.env` defaultlarıyla sıfırdan başlanır.
+
+`state.json` git-friendly metin dosyasıdır. Başka cihazdan kaldığı yerden devam
+etmek için:
+
+```bash
+# 1. cihaz
+git add data/state.json
+git commit -m "trade state snapshot"
+git push
+
+# 2. cihaz
+git pull
+uvicorn engine.app:app --port 8787   # snapshot otomatik yüklenir + auto-resume
+```
+
+`data/bot.db` (detaylı trade/sinyal/equity geçmişi) `.gitignore`'a alınmıştır;
+push edilmez. Yalnızca devam için gerekli minimum durum `state.json`'dadır.
+Veri klasörünü taşımak için `DATA_DIR=/path/to/dir` env değişkenini kullanın.
 
 REST endpoint'leri (sunucu: `uvicorn engine.app:app --port 8787`):
 

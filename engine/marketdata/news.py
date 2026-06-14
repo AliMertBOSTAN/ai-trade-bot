@@ -86,6 +86,71 @@ def _parse_feed(xml_text: str, source: str) -> list[dict]:
     return items
 
 
+# Anahtar-kelime sentiment sözlüğü (EN + TR). LLM'siz, hızlı, açıklanabilir.
+_BULLISH = {
+    "surge", "rally", "soar", "soars", "gain", "gains", "jump", "jumps", "bullish",
+    "breakout", "adopt", "adoption", "partnership", "upgrade", "approve", "approval",
+    "inflow", "inflows", "record", "high", "pump", "boom", "rise", "rises", "up",
+    "yükseliş", "yükseldi", "artış", "arttı", "rekor", "ralli", "onay", "onaylandı",
+    "kazanç", "sıçradı", "pozitif", "boğa", "yatırım", "ortaklık", "rekortmen",
+}
+_BEARISH = {
+    "crash", "plunge", "plunges", "drop", "drops", "fall", "falls", "dump", "dumps",
+    "bearish", "hack", "hacked", "exploit", "lawsuit", "ban", "banned", "selloff",
+    "sell-off", "outflow", "outflows", "fear", "decline", "slump", "down", "low",
+    "düşüş", "düştü", "çöküş", "çakıldı", "hack", "dava", "yasak", "kayıp",
+    "negatif", "ayı", "satış baskısı", "iflas", "dolandırıcılık", "tehlike",
+}
+
+_WORD_RE = re.compile(r"[\wçğıöşüÇĞİÖŞÜ]+", re.UNICODE)
+
+
+def _score_text(text: str) -> tuple[int, int]:
+    """Metindeki boğa/ayı kelime sayısı."""
+    words = {w.lower() for w in _WORD_RE.findall(text)}
+    low = text.lower()
+    bull = sum(1 for w in _BULLISH if (" " in w and w in low) or w in words)
+    bear = sum(1 for w in _BEARISH if (" " in w and w in low) or w in words)
+    return bull, bear
+
+
+def sentiment(symbol: str, limit: int = 40) -> dict:
+    """Bir token için haber sentiment'i (anahtar-kelime, LLM'siz).
+
+    Önce sembolü içeren başlıklara bakar; yeterli değilse piyasa geneline
+    düşer. Dönüş camelCase (renderer ile hizalı):
+      {score: -1..1, label, count, matched, market, headlines: [...]}
+    """
+    headlines = fetch_headlines(limit=limit)
+    sym = symbol.upper().lstrip("W")  # WETH -> ETH, WBTC -> BTC vb.
+    token = [h for h in headlines
+             if sym.lower() in h["title"].lower() or sym.lower() in h["summary"].lower()]
+    used, market = (token, False) if len(token) >= 3 else (headlines, True)
+
+    bull = bear = 0
+    for h in used:
+        b, r = _score_text(f"{h['title']} {h['summary']}")
+        bull += b
+        bear += r
+    total = bull + bear
+    score = (bull - bear) / total if total else 0.0
+    if score > 0.15:
+        label = "pozitif"
+    elif score < -0.15:
+        label = "negatif"
+    else:
+        label = "nötr"
+
+    return {
+        "score": round(score, 3),
+        "label": label,
+        "count": len(used),
+        "matched": len(token),
+        "market": market,  # True: piyasa geneli (token'a özel başlık az)
+        "headlines": [h["title"] for h in used[:3]],
+    }
+
+
 def fetch_headlines(limit: int = 30, query: str | None = None) -> list[dict]:
     """Tüm akışlardan güncel başlıklar; en yeniden eskiye sıralı.
 

@@ -9,6 +9,7 @@ import type {
   BotConfig,
   BotEvent,
   BotState,
+  ChartFeed,
   PortfolioSnapshot,
   PriceQuote,
   TradeMode,
@@ -43,6 +44,10 @@ export const api = {
   portfolio: () => get<PortfolioSnapshot>('/portfolio'),
   trades: (n = 100) => get<TradeOrder[]>(`/trades?limit=${n}`),
   equity: () => get<{ t: number; equity: number }[]>('/equity'),
+  chart: (symbol?: string, interval = '1h', limit = 200) =>
+    get<ChartFeed>(
+      `/chart?interval=${interval}&limit=${limit}${symbol ? `&symbol=${symbol}` : ''}`
+    ),
   marketdata: (symbols: string) => get<MarketSnapshot[]>(`/marketdata?symbols=${symbols}`),
   news: (limit = 12) => get<NewsItem[]>(`/news?limit=${limit}`),
   analyst: (symbol: string) => get<AnalystReport>(`/analyst/${symbol}`),

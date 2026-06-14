@@ -24,6 +24,7 @@ from engine.config.settings import settings
 from engine.dex import gas as gas_mod
 from engine.marketdata import aggregator as market_aggregator
 from engine.marketdata import analyst as market_analyst
+from engine.marketdata import chart as market_chart
 from engine.marketdata import news as market_news
 
 logging.basicConfig(level=logging.INFO,
@@ -52,6 +53,8 @@ async def _startup() -> None:
     _queue = asyncio.Queue()
     bot.subscribe(_on_event)
     asyncio.create_task(_broadcaster())
+    # Önceki oturum çalışır durumdaysa snapshot'tan kaldığı yerden devam et.
+    bot.maybe_resume()
 
 
 async def _broadcaster() -> None:
@@ -152,6 +155,16 @@ def marketdata_multi(symbols: str = "ETH,BTC"):
     """Virgülle ayrılmış sembol listesi için toplu anlık veri."""
     return market_aggregator.multi_snapshot(
         [s.strip() for s in symbols.split(",") if s.strip()])
+
+
+@app.get("/chart")
+def chart(symbol: str | None = None, interval: str = "1h", limit: int = 200):
+    """TA chart beslemesi: OHLCV + custom indikatör overlay'leri + al/sat işaretleri.
+
+    symbol verilmezse bot'un aktif sembolü (son sinyal/pozisyon) izlenir.
+    """
+    base = symbol or bot.active_symbol()
+    return market_chart.chart_feed(base, interval=interval, limit=min(limit, 1000))
 
 
 @app.get("/news")

@@ -109,7 +109,13 @@ export default function EquityChart({ data }: { data: { t: number; equity: numbe
     })
   }, [data])
 
-  useEffect(() => () => chartRef.current?.destroy(), [])
+  useEffect(
+    () => () => {
+      chartRef.current?.destroy()
+      chartRef.current = null
+    },
+    []
+  )
 
   return <canvas ref={ref} />
 }

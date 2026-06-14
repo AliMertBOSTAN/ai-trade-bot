@@ -137,6 +137,23 @@ export interface TechnicalSnapshot {
   wavetrend2?: number
 }
 
+/** Güvenin nasıl hesaplandığı: teknik + haber kırılımı (UI'da hep gösterilir). */
+export interface SignalBreakdown {
+  technicalScore: number // 0..1 kural skoru
+  technicalState: string // RSI/ADX/Supertrend... özeti
+  newsScore: number // -1..1 sentiment
+  newsLabel: string // pozitif|nötr|negatif
+  newsCount: number
+  newsMatched: number // token'a özel başlık sayısı
+  newsMarket: boolean // true: piyasa geneli (token'a özel az)
+  newsHeadlines: string[]
+  weights: { technical: number; news: number }
+  llmUsed: boolean
+  llmAction: string | null
+  llmNote: string
+  finalConfidence: number // 0..1
+}
+
 export interface TradeSignal {
   id: string
   chainId: ChainId
@@ -149,6 +166,7 @@ export interface TradeSignal {
   /** LLM'in kısa gerekçesi (hibrit modda) */
   rationale: string
   source: 'technical' | 'llm' | 'hybrid'
+  breakdown?: SignalBreakdown
   timestamp: number
 }
 
@@ -357,4 +375,50 @@ export interface AnalystReport {
   headlines: NewsItem[]
   llm: AnalystLlm | null
   llm_used: boolean
+}
+
+// ---- TA chart beslemesi (/chart, lightweight-charts) ----
+export interface LinePoint {
+  t: number // ms
+  value: number
+}
+
+export interface SupertrendPoint extends LinePoint {
+  dir: number // +1 yükseliş, -1 düşüş
+}
+
+export interface ChartMarker {
+  t: number // ms
+  action: 'BUY' | 'SELL'
+  confidence: number
+  price: number
+}
+
+export interface ChartSignal {
+  action: SignalAction
+  confidence: number
+  source: string
+  rationale: string
+  price: number
+}
+
+export interface ChartFeed {
+  symbol: string
+  quote: string
+  interval: string
+  /** OHLCV kaynağı: 'binance' (CEX) | 'coingecko' (token yedeği) */
+  source?: string
+  /** Veri bulunamazsa açıklama */
+  note?: string
+  candles: Candle[]
+  overlays: {
+    emaFast: LinePoint[]
+    emaSlow: LinePoint[]
+    bbUpper: LinePoint[]
+    bbMid: LinePoint[]
+    bbLower: LinePoint[]
+    supertrend: SupertrendPoint[]
+  }
+  markers: ChartMarker[]
+  signal: ChartSignal | null
 }

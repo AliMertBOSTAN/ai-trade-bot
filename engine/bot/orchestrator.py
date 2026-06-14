@@ -35,7 +35,23 @@ class TradingBot:
     def __init__(self, risk: RiskConfig | None = None):
         self.risk = risk or settings.risk
         self.portfolio = Portfolio(settings.starting_cash_usd)
-        self.executor = Executor(self.portfolio, self.risk, settings.trading_mode)
+        # Snapshot varsa portföyü ve modu geri yükle (başka cihazda kaldığı yer).
+        persisted_state = store.load_state()
+        initial_mode = settings.trading_mode
+        self._was_running_on_disk = False
+        if persisted_state:
+            pf = persisted_state.get("portfolio")
+            if pf:
+                try:
+                    self.portfolio.load_persist(pf)
+                    log.info("Portföy snapshot'tan yüklendi: cash=%.2f, pos=%d",
+                             self.portfolio.cash_usd, len(self.portfolio.positions))
+                except Exception as e:
+                    log.warning("Snapshot yüklenemedi, sıfırdan başlanıyor: %s", e)
+            initial_mode = persisted_state.get("mode") or initial_mode
+            self._was_running_on_disk = bool(persisted_state.get("was_running"))
+
+        self.executor = Executor(self.portfolio, self.risk, initial_mode)
         self.rm = RiskManager(self.risk)
 
         self.enabled_chains = list(settings.rpc.keys())
@@ -53,6 +69,24 @@ class TradingBot:
         self.last_tick = 0
         self.message = ""
         self._day_start = time.time()
+
+    # ---- kalıcılık ----
+    def _persist_state(self) -> None:
+        try:
+            store.save_state({
+                "portfolio": self.portfolio.to_persist(),
+                "mode": self.executor.mode,
+                "was_running": self._running.is_set(),
+                "updated_at": now_ms(),
+            })
+        except Exception as e:
+            log.warning("state.json yazılamadı: %s", e)
+
+    def maybe_resume(self) -> None:
+        """state.json'da was_running=True ise botu otomatik başlatır."""
+        if self._was_running_on_disk and not self._running.is_set():
+            log.info("Önceki oturum çalışıyordu — otomatik devam ediliyor")
+            self.start()
 
     # ---- pub/sub ----
     def subscribe(self, cb: EventCb) -> Callable[[], None]:
@@ -75,18 +109,21 @@ class TradingBot:
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         log.info("Bot başlatıldı (mod=%s)", self.executor.mode)
+        self._persist_state()
         return self.state()
 
     def stop(self) -> dict:
         self._running.clear()
         self.status = "stopped"
         log.info("Bot durduruldu")
+        self._persist_state()
         return self.state()
 
     def set_mode(self, mode: str) -> dict:
         try:
             self.executor.set_mode(mode)
             self.message = ""
+            self._persist_state()
         except Exception as e:
             self.status = "error"
             self.message = str(e)
@@ -177,15 +214,20 @@ class TradingBot:
 
         amount = (decision.size_usd / best.price) if sig.action == "BUY" else (
             self.portfolio.positions[f"{sig.chain_id}:{sig.base}"].amount)
+        # "Neden al/sat" gerekçesi: aksiyon + güven + kaynak + gösterge okuması.
+        reason = (f"{sig.action} · güven %{round(sig.confidence * 100)} · "
+                  f"{sig.source} · {sig.rationale}")
         order = TradeOrder(mode=self.executor.mode, chain_id=sig.chain_id,
                            dex=best.dex, base=sig.base, quote=sig.quote,
                            side=sig.action, amount=amount, price=best.price,
-                           signal_id=sig.id)
+                           signal_id=sig.id, reason=reason)
         filled = self.executor.execute(order)
         if filled.status == "filled" and filled.side == "SELL":
             self.rm.record_realized(self.portfolio.realized_pnl_usd)
         store.save_trade(filled)
-        self._emit({"type": "trade", "order": filled.to_dict()})
+        if filled.status == "filled":
+            self._persist_state()
+        self._emit({"type": "trade", "order": filled.to_api()})
 
     # ---- okuma erişimcileri (API için) ----
     def get_prices(self): return [q.to_dict() for q in self._latest_prices]
@@ -194,6 +236,14 @@ class TradingBot:
     def get_portfolio(self): return self.portfolio.snapshot()
     def get_trades(self, limit=100): return store.recent_trades(limit)
     def get_equity_curve(self): return store.equity_curve()
+
+    def active_symbol(self) -> str:
+        """Chart'ın izleyeceği sembol: en son sinyal -> açık pozisyon -> ETH."""
+        if self._latest_signals:
+            return self._latest_signals[-1].base
+        if self.portfolio.positions:
+            return next(iter(self.portfolio.positions.values())).base
+        return "ETH"
 
 
 bot = TradingBot()

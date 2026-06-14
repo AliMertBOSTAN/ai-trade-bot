@@ -22,7 +22,7 @@ class RiskConfig:
     take_profit_pct: float = 0.10            # %10
     slippage_bps: int = 50                   # 50 bps = %0.5 azami slippage
     max_gas_gwei: float = 80.0               # gas ücreti tavanı
-    min_confidence: float = 0.60             # bu skorun altındaki sinyal işlenmez
+    min_confidence: float = 0.80             # bu skorun altındaki sinyal işlenmez (emin olma eşiği)
     min_arb_net_profit_usd: float = 5.0      # bu kârın altındaki arbitraj atlanır
     use_flashbots: bool = True               # MEV koruması (live + ETH mainnet)
 
@@ -33,11 +33,14 @@ class Settings:
     poll_interval_ms: int = int(os.getenv("POLL_INTERVAL_MS", "8000"))
     starting_cash_usd: float = float(os.getenv("STARTING_CASH_USD", "10000"))
 
-    llm_provider: str = os.getenv("LLM_PROVIDER", "none")   # anthropic|openai|none
+    llm_provider: str = os.getenv("LLM_PROVIDER", "deepseek")   # deepseek|anthropic|openai|none
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
+    deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 
     wallet_private_key: str = os.getenv("WALLET_PRIVATE_KEY", "")
 

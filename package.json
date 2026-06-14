@@ -32,6 +32,7 @@
     "electron": "^31.0.0",
     "electron-rebuild": "^3.2.9",
     "electron-vite": "^2.3.0",
+    "lightweight-charts": "^4.2.3",
     "react": "^18.3.1",
     "react-chartjs-2": "^5.2.0",
     "react-dom": "^18.3.1",

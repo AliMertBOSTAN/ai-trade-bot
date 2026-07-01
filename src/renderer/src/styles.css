@@ -141,6 +141,40 @@ body {
   background: var(--neg);
   box-shadow: 0 0 8px rgba(251, 113, 133, 0.6);
 }
+.dot.warn {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
+  animation: blip 1s ease-in-out infinite;
+}
+.strat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+.strat-card {
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.strat-name {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.strat-bar {
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.strat-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #34d399, #22d3ee);
+}
 
 .seg {
   display: flex;
@@ -816,6 +850,36 @@ body {
   align-items: center;
   margin-bottom: 10px;
 }
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.card-head h3 {
+  margin: 0;
+}
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border, #2a2f3a);
+  color: var(--muted, #9aa4b2);
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+.btn-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-ghost.small {
+  font-size: 12px;
+}
 .sym {
   font-size: 18px;
   font-weight: 800;
@@ -930,6 +994,83 @@ body {
   font-weight: 700;
   cursor: pointer;
 }
+.analyst-verdict {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.bias-badge {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  padding: 8px 18px;
+  border-radius: 12px;
+}
+.bias-badge.pos {
+  background: rgba(52, 211, 153, 0.16);
+  color: var(--pos);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+}
+.bias-badge.neg {
+  background: rgba(251, 113, 133, 0.16);
+  color: var(--neg);
+  border: 1px solid rgba(251, 113, 133, 0.4);
+}
+.bias-badge.neu {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.whale-card .whale-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.whale-badge {
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+.whale-badge.pos {
+  background: rgba(52, 211, 153, 0.14);
+  color: var(--pos);
+}
+.whale-badge.neg {
+  background: rgba(251, 113, 133, 0.14);
+  color: var(--neg);
+}
+.whale-badge.neu {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+.whale-walls {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.wallet-chip {
+  margin-left: 10px;
+  background: transparent;
+  border: 1px solid var(--border, #2a2f3a);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.wallet-chip.on {
+  border-color: rgba(106, 166, 255, 0.5);
+  color: #6aa6ff;
+}
+.wallet-chip:hover {
+  border-color: #6aa6ff;
+}
 .sentiment {
   display: inline-flex;
   align-items: center;
@@ -938,7 +1079,7 @@ body {
   font-weight: 800;
   padding: 6px 14px;
   border-radius: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 .sentiment.pos {
   background: rgba(52, 211, 153, 0.12);
@@ -1004,6 +1145,173 @@ body {
   overflow: auto;
 }
 
+/* ===================================================================== */
+/*  Keşfet (Explore) — tüm enstrümanlar tek ekranda                      */
+/* ===================================================================== */
+.explore {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.explore-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.search {
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 14px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  min-width: 240px;
+  flex: 1;
+}
+.search:focus {
+  outline: none;
+  border-color: var(--border-hover);
+}
+.mfilters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mf {
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 7px 13px;
+  border-radius: 9px;
+  font-weight: 700;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+.mf:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+.mf.active {
+  background: linear-gradient(135deg, var(--accent), #4d8df5);
+  color: #021026;
+  border-color: transparent;
+}
+.mf.soon {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.soon-badge {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--live);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+.explore-table .tbl th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.explore-table .tbl th.sortable:hover {
+  color: var(--text);
+}
+.tbl th.num,
+.tbl td.num {
+  text-align: right;
+}
+.clickrow {
+  cursor: pointer;
+}
+.vbadge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  vertical-align: middle;
+}
+.vbadge.dex {
+  color: var(--accent2);
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+}
+.vbadge.cex {
+  color: var(--live);
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+.lev {
+  margin-left: 7px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  color: var(--live);
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  padding: 1px 6px;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+.explore-chart {
+  padding: 14px 16px;
+  height: 440px;
+  display: flex;
+  flex-direction: column;
+}
+/* Keşfet kartında grafik kalan alanı doldursun (chartbox gibi sabit kapsayıcı yok) */
+.explore-chart .tachart {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+.ext-link {
+  margin-left: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.ext-link:hover {
+  color: #6aa6ff;
+  opacity: 1;
+}
+.explore-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.explore-chart-head h3 {
+  margin: 0;
+}
+.xbtn {
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.xbtn:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+.explore-foot {
+  text-align: center;
+}
+
 @media (max-width: 1100px) {
   .kpis {
     grid-template-columns: repeat(3, 1fr);
@@ -1019,4 +1327,269 @@ body {
   .card.span2 {
     grid-column: span 1;
   }
+}
+
+/* ---- Cüzdan bağlama modalı ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+  width: min(440px, 92vw);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.modal h3 {
+  margin: 0 0 8px;
+}
+.modal .wallet-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 12px;
+  padding: 10px 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--text, #e6edf6);
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+.modal .wallet-input:focus {
+  border-color: var(--accent);
+}
+.modal .err {
+  color: #ff7676;
+  margin-top: 8px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+.modal-actions .btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--text, #e6edf6);
+  cursor: pointer;
+  font-size: 13px;
+}
+.modal-actions .btn:hover {
+  border-color: var(--border-hover);
+}
+.modal-actions .btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #07090f;
+  font-weight: 600;
+}
+.modal-actions .btn.warn {
+  color: #ffb86b;
+}
+
+/* ---- Açık pozisyon tablosu ---- */
+.tbl-scroll {
+  overflow-x: auto;
+}
+.side-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.side-badge.long {
+  background: rgba(45, 212, 191, 0.15);
+  color: #2dd4bf;
+}
+.side-badge.short {
+  background: rgba(255, 118, 118, 0.15);
+  color: #ff7676;
+}
+
+/* ---- Strateji kontrol paneli ---- */
+.strat-card.off {
+  opacity: 0.62;
+}
+.strat-desc {
+  margin: 6px 0;
+  line-height: 1.4;
+}
+.strat-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.strat-weight {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  gap: 10px;
+}
+.weight-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.weight-ctl input[type='range'] {
+  width: 90px;
+  accent-color: var(--accent);
+}
+.catalog {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+/* aç/kapa anahtarı (toggle switch) */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 20px;
+  cursor: pointer;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switch .slider {
+  position: absolute;
+  inset: 0;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  transition: 0.2s;
+}
+.switch .slider::before {
+  content: '';
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  bottom: 2px;
+  background: #8b97ab;
+  border-radius: 50%;
+  transition: 0.2s;
+}
+.switch input:checked + .slider {
+  background: rgba(106, 166, 255, 0.25);
+  border-color: var(--accent);
+}
+.switch input:checked + .slider::before {
+  transform: translateX(18px);
+  background: var(--accent);
+}
+.btn.small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* ---- Ağ (zincir) seçimi ---- */
+.chain-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.chain-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chain-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--text, #e6edf6);
+  cursor: pointer;
+  font-size: 13px;
+  transition: 0.15s;
+}
+.chain-chip:hover {
+  border-color: var(--border-hover);
+}
+.chain-chip .chain-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #56607a;
+}
+.chain-chip.on {
+  border-color: var(--accent);
+  background: rgba(106, 166, 255, 0.12);
+}
+.chain-chip.on .chain-dot {
+  background: #2dd4bf;
+  box-shadow: 0 0 6px #2dd4bf;
+}
+
+/* ---- Ağ toggle listesi ---- */
+.chain-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chain-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  cursor: pointer;
+  transition: 0.15s;
+}
+.chain-row:hover {
+  border-color: var(--border-hover);
+}
+.chain-row.on {
+  border-color: var(--accent);
+  background: rgba(106, 166, 255, 0.1);
+}
+.chain-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.chain-row .chain-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #56607a;
+}
+.chain-row.on .chain-dot {
+  background: #2dd4bf;
+  box-shadow: 0 0 6px #2dd4bf;
+}
+.chain-state {
+  min-width: 42px;
+  text-align: right;
+}
+
+/* ---- Pozisyon başlığı aksiyonları ---- */
+.ph-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }

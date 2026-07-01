@@ -1,0 +1,48 @@
+# electron-builder yapılandırması — masaüstü kurulum paketleri üretir.
+# Kullanım: npm run dist  (önce electron-vite build, sonra electron-builder)
+appId: com.aitradebot.app
+productName: AI Trade Bot
+copyright: Copyright © 2026
+
+directories:
+  output: release
+  buildResources: build
+
+# electron-vite çıktısı (derlenmiş main/preload/renderer) + çalışma zamanı dosyaları
+files:
+  - out/**/*
+  - package.json
+
+# Python motoru paketle (kullanıcı kendi venv'inde çalıştırır; kaynak dahil edilir).
+# Not: engine'i app içinde otomatik başlatmak için PyInstaller ile ayrı paketlemek
+# tercih edilebilir; şimdilik kaynak + requirements ile birlikte dağıtılır.
+extraResources:
+  - from: engine
+    to: engine
+    filter:
+      - "**/*.py"
+  - from: engine/requirements.txt
+    to: engine/requirements.txt
+
+win:
+  target:
+    - nsis
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.finance
+  # İmzalama için (opsiyonel): CSC_LINK / CSC_KEY_PASSWORD ortam değişkenleri
+  artifactName: ${productName}-${version}.${ext}
+
+linux:
+  target:
+    - AppImage
+  category: Finance
+  artifactName: ${productName}-${version}.${ext}

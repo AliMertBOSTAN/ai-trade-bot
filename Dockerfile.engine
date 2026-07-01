@@ -1,0 +1,22 @@
+# Python motorunu (FastAPI + WebSocket) konteynerde çalıştırır.
+# Build: docker build -f Dockerfile.engine -t ai-trade-bot-engine .
+# Run:   docker run --env-file .env -p 8787:8787 ai-trade-bot-engine
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Önce bağımlılıklar (katman cache'i için)
+COPY engine/requirements.txt engine/requirements.txt
+RUN pip install --no-cache-dir -r engine/requirements.txt
+
+# Motor kaynağı
+COPY engine engine
+
+# Veri klasörü (SQLite + state.json) — volume ile kalıcı yapılabilir
+ENV DATA_DIR=/data
+VOLUME ["/data"]
+
+EXPOSE 8787
+
+# 0.0.0.0: konteyner dışından erişim için
+CMD ["python", "-m", "uvicorn", "engine.app:app", "--host", "0.0.0.0", "--port", "8787"]

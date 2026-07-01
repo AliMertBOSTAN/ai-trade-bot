@@ -58,7 +58,6 @@ def chart_feed(base: str, interval: str = "1h", limit: int = 200) -> dict:
         return empty
 
     ts = [c["t"] for c in candles]
-    opens = [c["open"] for c in candles]
     highs = [c["high"] for c in candles]
     lows = [c["low"] for c in candles]
     closes = [c["close"] for c in candles]

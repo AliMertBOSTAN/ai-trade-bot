@@ -27,7 +27,9 @@ const ACTION_COLOR: Record<string, string> = {
   HOLD: '#9fb0c9'
 }
 
-export default function TechnicalChart(): JSX.Element {
+export default function TechnicalChart(
+  { symbol: initialSymbol }: { symbol?: string } = {}
+): JSX.Element {
   const boxRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -43,8 +45,9 @@ export default function TechnicalChart(): JSX.Element {
   const [feed, setFeed] = useState<ChartFeed | null>(null)
   const [err, setErr] = useState(false)
   // Boşsa backend aktif sembolü (son sinyal/pozisyon) izler; doluysa o token.
-  const [symInput, setSymInput] = useState('')
-  const [symbol, setSymbol] = useState<string | undefined>(undefined)
+  // initialSymbol verilirse (örn. Keşfet'ten tıklama) o sembolle açılır.
+  const [symInput, setSymInput] = useState(initialSymbol ?? '')
+  const [symbol, setSymbol] = useState<string | undefined>(initialSymbol)
 
   // --- veri çekimi ---
   useEffect(() => {

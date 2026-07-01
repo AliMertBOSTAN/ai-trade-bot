@@ -56,7 +56,7 @@ function MarketCard({ m }: { m: MarketSnapshot }): JSX.Element {
 
 const SYMBOLS = 'ETH,BTC,BNB,MATIC,ARB,OP,LINK,UNI'
 
-export default function MarketPanel(): JSX.Element {
+export default function MarketPanel({ active }: { active: boolean }): JSX.Element {
   const [data, setData] = useState<MarketSnapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(false)
@@ -73,11 +73,14 @@ export default function MarketPanel(): JSX.Element {
     }
   }, [])
 
+  // Sadece sekme AÇIKKEN tazele. Sekme değişince panel mount kalır (App'te
+  // gizlenir) → veriler durur; gizliyken arka planda istek atılmaz.
   useEffect(() => {
+    if (!active) return
     load()
     const t = setInterval(load, 15000) // piyasa verisi 15 sn'de bir (ağ-yoğun)
     return () => clearInterval(t)
-  }, [load])
+  }, [active, load])
 
   if (loading) return <div className="muted">piyasa verisi yükleniyor…</div>
   if (err && !data.length)

@@ -353,8 +353,9 @@ def compute_snapshot(
     OHLCV verilirse hacim/oynaklık göstergeleri gerçek veriyle, yalnızca
     kapanışlar verilirse güvenli yaklaşımla hesaplanır.
     """
-    # advanced.py döngüsel import'tan kaçınmak için yerel import
+    # advanced.py / patterns.py döngüsel import'tan kaçınmak için yerel import
     from engine.indicators import advanced as adv
+    from engine.indicators import patterns as pat
 
     highs, lows, volumes = _coerce_ohlcv(closes, highs, lows, volumes)
     price = closes[-1] if closes else 0.0
@@ -374,6 +375,13 @@ def compute_snapshot(
     ao_v = adv.awesome_oscillator(highs, lows)
     sq_on, sq_mom = adv.squeeze_momentum(highs, lows, closes)
     wt1, wt2 = adv.wavetrend(highs, lows, closes)
+
+    # Pattern / piyasa-yapısı (TradingView'den uyarlanan)
+    ma_x = pat.ma_cross(closes)
+    rsi_d = pat.rsi_divergence(highs, lows, closes)
+    smc = pat.market_structure(highs, lows, closes)
+    fvg = pat.fair_value_gap(highs, lows, closes)
+    swing = pat.swing_trend(highs, lows)   # Dow yapısı: HH+HL / LH+LL
 
     return TechnicalSnapshot(
         # --- klasik ---
@@ -421,4 +429,10 @@ def compute_snapshot(
         squeeze_momentum=sq_mom,
         wavetrend1=wt1,
         wavetrend2=wt2,
+        # --- pattern / piyasa-yapısı ---
+        ma_cross_dir=float(ma_x),
+        rsi_div=float(rsi_d),
+        smc_trend=float(smc),
+        fvg_bias=float(fvg),
+        swing_trend=float(swing),
     )

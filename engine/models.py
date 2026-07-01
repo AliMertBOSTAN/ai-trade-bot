@@ -1,4 +1,4 @@
-"""Çekirdek veri modelleri (TS shared/types.ts ile hizalı)."""
+"""Cekirdek veri modelleri (TS shared/types.ts ile hizali)."""
 from __future__ import annotations
 
 import time
@@ -56,7 +56,6 @@ class ArbitrageOpportunity:
 
 @dataclass
 class TechnicalSnapshot:
-    # --- temel (eski alanlar; geriye dönük uyumlu) ---
     rsi: float
     ema_fast: float
     ema_slow: float
@@ -64,7 +63,6 @@ class TechnicalSnapshot:
     macd_signal: float
     momentum: float
     price: float
-    # --- genişletilmiş klasik göstergeler (varsayılanlı) ---
     sma_20: float = 0.0
     roc: float = 0.0
     stoch_k: float = 50.0
@@ -84,7 +82,6 @@ class TechnicalSnapshot:
     obv: float = 0.0
     vwap: float = 0.0
     mfi: float = 50.0
-    # --- gelişmiş / TradingView göstergeleri ---
     supertrend: float = 0.0
     supertrend_dir: float = 0.0
     ichimoku_tenkan: float = 0.0
@@ -102,6 +99,11 @@ class TechnicalSnapshot:
     squeeze_momentum: float = 0.0
     wavetrend1: float = 0.0
     wavetrend2: float = 0.0
+    ma_cross_dir: float = 0.0   # SMA cross: +1 long / -1 short / 0
+    rsi_div: float = 0.0        # RSI uyumsuzluk: +1 boga / -1 ayi / 0
+    smc_trend: float = 0.0      # SMC swing yapi (BOS/CHoCH): +1 / -1 / 0
+    fvg_bias: float = 0.0       # Fair Value Gap yonu: +1 boga / -1 ayi / 0
+    swing_trend: float = 0.0    # Dow yapisi (HH+HL / LH+LL): +1 yukselis / -1 dusus / 0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -117,14 +119,12 @@ class TradeSignal:
     technical: TechnicalSnapshot
     rationale: str
     source: str  # technical|llm|hybrid
-    # Güvenin nasıl hesaplandığı (teknik + haber kırılımı); camelCase, UI'da gösterilir.
     breakdown: dict | None = None
     id: str = field(default_factory=_id)
     timestamp: int = field(default_factory=now_ms)
 
     def to_dict(self) -> dict:
-        d = asdict(self)
-        return d
+        return asdict(self)
 
 
 @dataclass
@@ -143,6 +143,10 @@ class TradeOrder:
     fee_usd: float = 0.0
     reason: str = ""
     signal_id: str = ""
+    venue_type: str = "dex"
+    # Islem nonce'u: live'da gercek zincir nonce'u; paper'da sirali simule sayac.
+    # -1 = atanmadi.
+    nonce: int = -1
     id: str = field(default_factory=_id)
     timestamp: int = field(default_factory=now_ms)
 
@@ -150,7 +154,7 @@ class TradeOrder:
         return asdict(self)
 
     def to_api(self) -> dict:
-        """Renderer ile hizalı camelCase temsil (TS TradeOrder)."""
+        """Renderer ile hizali camelCase temsil (TS TradeOrder)."""
         return {
             "id": self.id, "mode": self.mode, "chainId": self.chain_id,
             "dex": self.dex, "base": self.base, "quote": self.quote,
@@ -158,6 +162,8 @@ class TradeOrder:
             "status": self.status, "txHash": self.tx_hash,
             "filledPrice": self.filled_price, "feeUsd": self.fee_usd,
             "reason": self.reason, "signalId": self.signal_id,
+            "venueType": self.venue_type,
+            "nonce": self.nonce,
             "timestamp": self.timestamp,
         }
 
@@ -172,6 +178,8 @@ class Position:
     realized_pnl_usd: float = 0.0
     unrealized_pnl_usd: float = 0.0
     last_price: float = 0.0
+    dex: str = ""          # pozisyonun acildigi platform (DEX adi)
+    opened_ts: int = 0     # ilk acilis zamani (ms)
 
     @property
     def key(self) -> str:
@@ -180,4 +188,20 @@ class Position:
     def to_dict(self) -> dict:
         d = asdict(self)
         d["key"] = self.key
+        # Turetilmis alanlar (frontend dogrudan kullanir):
+        side = "LONG" if self.amount >= 0 else "SHORT"
+        cost = abs(self.amount) * self.avg_entry          # maliyet (giris bazi)
+        value = self.amount * self.last_price             # anlik deger (imzali)
+        pnl_pct = 0.0
+        if self.avg_entry > 0:
+            change = (self.last_price - self.avg_entry) / self.avg_entry
+            if self.amount < 0:        # short: fiyat dususe gecince kar
+                change = -change
+            pnl_pct = change * 100.0
+        d["side"] = side
+        d["costUsd"] = round(cost, 2)
+        d["valueUsd"] = round(value, 2)
+        d["pnlPct"] = round(pnl_pct, 2)
+        d["dex"] = self.dex
+        d["openedTs"] = self.opened_ts
         return d

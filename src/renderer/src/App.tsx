@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, connectEvents } from './api'
+import { api, connectEvents, type ConnStatus } from './api'
+import { useI18n } from './lib/i18n'
 import EquityChart from './components/EquityChart'
 import TechnicalChart from './components/TechnicalChart'
-import Indicators from './components/Indicators'
 import MarketPanel from './components/MarketPanel'
 import NewsPanel from './components/NewsPanel'
 import AnalystPanel from './components/AnalystPanel'
+import ExplorePanel from './components/ExplorePanel'
+import SignalsView from './views/SignalsView'
+import StrategiesView from './views/StrategiesView'
+import ArbitrageView from './views/ArbitrageView'
+import TradesView from './views/TradesView'
+import PositionsTable from './components/PositionsTable'
+import ChainsPanel from './components/ChainsPanel'
+import { CHAIN_NAMES, TABS, usd, type Tab } from './lib/ui'
 import type {
   ArbitrageOpportunity,
   BotState,
@@ -13,38 +21,9 @@ import type {
   PortfolioSnapshot,
   PriceQuote,
   TradeOrder,
-  TradeSignal
+  TradeSignal,
+  WalletInfo
 } from '@shared/types'
-
-const CHAIN_NAMES: Record<number, string> = {
-  1: 'Ethereum',
-  42161: 'Arbitrum',
-  8453: 'Base',
-  10: 'Optimism',
-  56: 'BNB',
-  137: 'Polygon'
-}
-
-type Tab = 'overview' | 'market' | 'signals' | 'arbitrage' | 'news' | 'analyst' | 'trades'
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Genel' },
-  { id: 'market', label: 'Piyasa' },
-  { id: 'signals', label: 'Sinyaller' },
-  { id: 'arbitrage', label: 'Arbitraj' },
-  { id: 'news', label: 'Haberler' },
-  { id: 'analyst', label: 'AI Analist' },
-  { id: 'trades', label: 'İşlemler' }
-]
-
-const usd = (n: number | null | undefined): string =>
-  Number.isFinite(n)
-    ? (n as number).toLocaleString('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        maximumFractionDigits: 2
-      })
-    : '—'
 
 export default function App(): JSX.Element {
   const [state, setState] = useState<BotState>({ status: 'stopped', mode: 'paper', lastTick: 0 })
@@ -57,7 +36,13 @@ export default function App(): JSX.Element {
   const [gas, setGas] = useState<GasInfo[]>([])
   const [logs, setLogs] = useState<string[]>([])
   const [connected, setConnected] = useState(false)
+  const [wallet, setWallet] = useState<WalletInfo | null>(null)
+  const [walletModal, setWalletModal] = useState(false)
+  const [walletInput, setWalletInput] = useState('')
+  const [walletErr, setWalletErr] = useState('')
+  const [wsStatus, setWsStatus] = useState<ConnStatus>('connecting')
   const [tab, setTab] = useState<Tab>('overview')
+  const { t, lang, setLang } = useI18n()
   const logRef = useRef<string[]>([])
 
   const pushLog = useCallback((msg: string) => {
@@ -72,7 +57,7 @@ export default function App(): JSX.Element {
         api.prices(),
         api.arbitrage(),
         api.signals(),
-        api.trades(60),
+        api.trades(200),
         api.portfolio(),
         api.equity()
       ])
@@ -100,13 +85,14 @@ export default function App(): JSX.Element {
   useEffect(() => {
     refresh()
     refreshGas()
+    api.wallet().then(setWallet).catch(() => {})
     const poll = setInterval(refresh, 5000)
     const gasPoll = setInterval(refreshGas, 15000)
     const off = connectEvents((e) => {
       if (e.type === 'tick') setState(e.state)
       else if (e.type === 'signal') setSignals((p) => [e.signal, ...p].slice(0, 40))
       else if (e.type === 'trade') {
-        setTrades((p) => [e.order, ...p].slice(0, 60))
+        setTrades((p) => [e.order, ...p].slice(0, 200))
         const o = e.order
         pushLog(
           `İŞLEM ${o.side} ${o.amount.toFixed(4)} ${o.base} @ ${usd(o.filledPrice || o.price)}` +
@@ -115,7 +101,7 @@ export default function App(): JSX.Element {
       }
       else if (e.type === 'arbitrage') setArbs((p) => [e.opp, ...p].slice(0, 20))
       else if (e.type === 'log') pushLog(`[${e.level}] ${e.message}`)
-    })
+    }, setWsStatus)
     return () => {
       clearInterval(poll)
       clearInterval(gasPoll)
@@ -128,6 +114,33 @@ export default function App(): JSX.Element {
     setState(s)
     pushLog(s.status === 'running' ? 'Bot başlatıldı' : 'Bot durduruldu')
   }
+
+  const connectWallet = (): void => {
+    // İmzalayıcı (live anahtar) varsa adres ondan türetilir; değiştirilemez.
+    if (wallet?.source === 'signer') {
+      pushLog(`İmzalayıcı cüzdan (live anahtar) bağlı: ${wallet.address}`)
+      return
+    }
+    // Electron'da window.prompt desteklenmez → uygulama-içi modal aç.
+    setWalletInput(wallet?.address ?? '')
+    setWalletErr('')
+    setWalletModal(true)
+  }
+
+  const submitWallet = async (addr: string): Promise<void> => {
+    try {
+      const w = await api.connectWallet(addr.trim())
+      setWallet(w)
+      setWalletModal(false)
+      setWalletErr('')
+      pushLog(addr.trim() ? `Cüzdan bağlandı: ${addr.trim()}` : 'Cüzdan bağlantısı kesildi')
+    } catch (e) {
+      setWalletErr((e as Error).message || 'Bağlanamadı')
+    }
+  }
+
+  const shortAddr = (a?: string | null): string =>
+    a ? `${a.slice(0, 6)}…${a.slice(-4)}` : ''
 
   const switchMode = async (mode: 'paper' | 'live'): Promise<void> => {
     try {
@@ -150,6 +163,24 @@ export default function App(): JSX.Element {
         <div className="brand">
           <span className="logo">◆</span> AI Trade Bot
           <span className={`badge ${state.mode}`}>{state.mode.toUpperCase()}</span>
+          <button
+            className={`wallet-chip ${wallet?.address ? 'on' : ''}`}
+            onClick={connectWallet}
+            title={
+              wallet?.address
+                ? `${wallet.address}\n(${wallet.source === 'signer' ? 'imzalayıcı' : 'izleme'})`
+                : 'Cüzdan bağla (public adres)'
+            }
+          >
+            {wallet?.address ? (
+              <>
+                👛 {shortAddr(wallet.address)}
+                {wallet.source === 'watch' && <span className="muted small"> · izleme</span>}
+              </>
+            ) : (
+              '👛 Cüzdan Bağla'
+            )}
+          </button>
         </div>
         <div className="controls">
           {ethGas && (
@@ -157,58 +188,168 @@ export default function App(): JSX.Element {
               ⛽ {ethGas.gwei} gwei · {usd(ethGas.swap_usd)}
             </span>
           )}
-          <span className={`dot ${connected ? 'on' : 'off'}`} />
-          <span className="muted">{connected ? 'engine bağlı' : 'engine yok (uvicorn?)'}</span>
-          <div className="seg">
-            <button className={state.mode === 'paper' ? 'active' : ''} onClick={() => switchMode('paper')}>
-              Paper
+          <span
+            className={`dot ${connected ? 'on' : wsStatus === 'reconnecting' ? 'warn' : 'off'}`}
+          />
+          <span className="muted" role="status" aria-live="polite">
+            {connected
+              ? t('conn.open')
+              : wsStatus === 'reconnecting'
+                ? t('conn.reconnecting')
+                : wsStatus === 'connecting'
+                  ? t('conn.connecting')
+                  : t('conn.down')}
+          </span>
+          <button
+            className="btn-ghost small"
+            onClick={() => setLang(lang === 'tr' ? 'en' : 'tr')}
+            aria-label="Dil değiştir / change language"
+            title="TR / EN"
+          >
+            🌐 {lang.toUpperCase()}
+          </button>
+          <div className="seg" role="group" aria-label="İşlem modu">
+            <button
+              className={state.mode === 'paper' ? 'active' : ''}
+              aria-pressed={state.mode === 'paper'}
+              onClick={() => switchMode('paper')}
+            >
+              {t('mode.paper')}
             </button>
             <button
               className={state.mode === 'live' ? 'active live' : ''}
+              aria-pressed={state.mode === 'live'}
               onClick={() => switchMode('live')}
             >
-              Live
+              {t('mode.live')}
             </button>
           </div>
-          <button className={`run ${state.status}`} onClick={toggleRun}>
-            {state.status === 'running' ? '■ Durdur' : '▶ Başlat'}
+          <button
+            className={`run ${state.status}`}
+            onClick={toggleRun}
+            aria-label={state.status === 'running' ? t('run.stop') : t('run.start')}
+          >
+            {state.status === 'running' ? t('run.stop') : t('run.start')}
           </button>
         </div>
       </header>
 
       <section className="kpis">
-        <Kpi label="Equity" value={usd(equityVal)} />
-        <Kpi label="Nakit" value={usd(portfolio?.cashUsd ?? 0)} />
-        <Kpi label="Toplam PnL" value={usd(pnl)} accent={pnl >= 0 ? 'pos' : 'neg'} />
-        <Kpi label="Açık Pozisyon" value={String(portfolio?.positions.length ?? 0)} />
-        <Kpi label="Fırsat (arb)" value={String(arbs.length)} />
-        <Kpi label="Gas (ETH)" value={ethGas ? `${ethGas.gwei} gwei` : '—'} />
+        <Kpi label={t('kpi.equity')} value={usd(equityVal)} />
+        <Kpi label={t('kpi.cash')} value={usd(portfolio?.cashUsd ?? 0)} />
+        <Kpi label={t('kpi.pnl')} value={usd(pnl)} accent={pnl >= 0 ? 'pos' : 'neg'} />
+        <Kpi label={t('kpi.positions')} value={String(portfolio?.positions.length ?? 0)} />
+        <Kpi label={t('kpi.arb')} value={String(arbs.length)} />
+        <Kpi label={t('kpi.gas')} value={ethGas ? `${ethGas.gwei} gwei` : '—'} />
       </section>
 
-      <nav className="tabs">
-        {TABS.map((t) => (
+      <nav className="tabs" role="tablist">
+        {TABS.map((tb) => (
           <button
-            key={t.id}
-            className={tab === t.id ? 'tab active' : 'tab'}
-            onClick={() => setTab(t.id)}
+            key={tb.id}
+            className={tab === tb.id ? 'tab active' : 'tab'}
+            role="tab"
+            aria-selected={tab === tb.id}
+            onClick={() => setTab(tb.id)}
           >
-            {t.label}
-            {t.id === 'arbitrage' && arbs.length > 0 && <span className="pill">{arbs.length}</span>}
+            {t(`tab.${tb.id}`)}
+            {tb.id === 'arbitrage' && arbs.length > 0 && (
+              <span className="pill">{arbs.length}</span>
+            )}
           </button>
         ))}
       </nav>
 
       <main className="content">
         {tab === 'overview' && (
-          <Overview equity={equity} portfolio={portfolio} prices={prices} gas={gas} />
+          <Overview
+            equity={equity}
+            portfolio={portfolio}
+            prices={prices}
+            gas={gas}
+            onResetPaper={async () => {
+              if (state.mode === 'live') {
+                pushLog('Live modda paper sıfırlama yapılmaz')
+                return
+              }
+              if (!window.confirm('Paper portföy sıfırlanıp $100 değerinde ETH ile başlatılacak. Onaylıyor musun?'))
+                return
+              const r = await api.resetPaper()
+              if (r.ok) {
+                setTrades([])
+                pushLog(`Paper sıfırlandı → $${r.seed_usd} ${r.asset}`)
+              } else {
+                pushLog(`Sıfırlama başarısız: ${r.reason ?? 'bilinmiyor'}`)
+              }
+            }}
+          />
         )}
-        {tab === 'market' && <MarketPanel />}
+        {/* Keşfet ve Piyasa her zaman mount kalır; sekme değişince sadece gizlenir
+            → yüklenen veriler, filtreler ve seçim KAYBOLMAZ (yeniden yükleme yok).
+            Uygulamayı kapatınca tüm state ile birlikte temizlenir. */}
+        <div style={{ display: tab === 'explore' ? 'contents' : 'none' }}>
+          <ExplorePanel active={tab === 'explore'} />
+        </div>
+        <div style={{ display: tab === 'market' ? 'contents' : 'none' }}>
+          <MarketPanel active={tab === 'market'} />
+        </div>
         {tab === 'signals' && <SignalsView signals={signals} />}
+        {tab === 'strategies' && <StrategiesView active={tab === 'strategies'} />}
         {tab === 'arbitrage' && <ArbitrageView arbs={arbs} />}
         {tab === 'news' && <NewsPanel />}
         {tab === 'analyst' && <AnalystPanel />}
-        {tab === 'trades' && <TradesView trades={trades} logs={logs} />}
+        {tab === 'trades' && (
+          <TradesView
+            trades={trades}
+            logs={logs}
+            positions={portfolio?.positions ?? []}
+            onClear={async () => {
+              if (!window.confirm('Tüm işlem geçmişi silinecek. Emin misin?')) return
+              await api.clearTrades()
+              setTrades([])
+            }}
+          />
+        )}
       </main>
+
+      {walletModal && (
+        <div className="modal-overlay" onClick={() => setWalletModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>👛 Cüzdan Bağla</h3>
+            <p className="muted small">
+              İzlemek istediğin public adresi (0x…) gir. Özel anahtar ASLA girilmez.
+              Boş bırakıp “Bağla” dersen bağlantı kesilir.
+            </p>
+            <input
+              className="wallet-input"
+              type="text"
+              autoFocus
+              spellCheck={false}
+              placeholder="0x..."
+              value={walletInput}
+              onChange={(e) => setWalletInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void submitWallet(walletInput)
+                if (e.key === 'Escape') setWalletModal(false)
+              }}
+            />
+            {walletErr && <div className="muted small err">{walletErr}</div>}
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setWalletModal(false)}>
+                İptal
+              </button>
+              {wallet?.address && (
+                <button className="btn warn" onClick={() => void submitWallet('')}>
+                  Bağlantıyı Kes
+                </button>
+              )}
+              <button className="btn primary" onClick={() => void submitWallet(walletInput)}>
+                Bağla
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -217,12 +358,14 @@ function Overview({
   equity,
   portfolio,
   prices,
-  gas
+  gas,
+  onResetPaper
 }: {
   equity: { t: number; equity: number }[]
   portfolio: PortfolioSnapshot | null
   prices: PriceQuote[]
   gas: GasInfo[]
+  onResetPaper?: () => void
 }): JSX.Element {
   return (
     <div className="grid">
@@ -240,39 +383,9 @@ function Overview({
         </div>
       </div>
 
-      <div className="card">
-        <h3>Portföy</h3>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Zincir</th>
-              <th>Token</th>
-              <th>Adet</th>
-              <th>Giriş</th>
-              <th>PnL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {portfolio?.positions.length ? (
-              portfolio.positions.map((p) => (
-                <tr key={p.key}>
-                  <td>{CHAIN_NAMES[p.chainId] ?? p.chainId}</td>
-                  <td>{p.base}</td>
-                  <td>{p.amount.toFixed(4)}</td>
-                  <td>{usd(p.avgEntry)}</td>
-                  <td className={p.unrealizedPnlUsd >= 0 ? 'pos' : 'neg'}>{usd(p.unrealizedPnlUsd)}</td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={5} className="muted">
-                  pozisyon yok
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <ChainsPanel />
+
+      <PositionsTable positions={portfolio?.positions ?? []} onReset={onResetPaper} />
 
       <div className="card">
         <h3>Canlı Gas</h3>
@@ -325,170 +438,6 @@ function Overview({
               )}
             </tbody>
           </table>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-const TRADE_THRESHOLD = 80 // emin olma eşiği (%) — üzerindekilere işlem açılır
-
-function SignalBreakdownView({ s }: { s: TradeSignal }): JSX.Element | null {
-  const b = s.breakdown
-  if (!b) return null
-  const conf = Math.round(b.finalConfidence * 100)
-  const willTrade = conf >= TRADE_THRESHOLD && s.action !== 'HOLD'
-  const techPct = Math.round(b.technicalScore * 100)
-  const newsCls = b.newsLabel === 'pozitif' ? 'pos' : b.newsLabel === 'negatif' ? 'neg' : 'muted'
-  return (
-    <div className="sig-bd">
-      <div className="sig-bd-row">
-        <span className="sig-bd-k">Teknik</span>
-        <div className="sig-bd-bar">
-          <div className="sig-bd-fill tech" style={{ width: `${techPct}%` }} />
-        </div>
-        <span className="sig-bd-v">
-          {techPct}% <span className="muted">×{b.weights.technical}</span>
-        </span>
-      </div>
-      <div className="sig-bd-row">
-        <span className="sig-bd-k">Haber</span>
-        <span className={`sig-bd-v ${newsCls}`}>
-          {b.newsLabel} ({b.newsScore >= 0 ? '+' : ''}
-          {b.newsScore.toFixed(2)})
-        </span>
-        <span className="muted small">
-          {b.newsCount} başlık{b.newsMarket ? ' · piyasa geneli' : ` · ${b.newsMatched} ${s.base}`} ·
-          ×{b.weights.news}
-        </span>
-      </div>
-      {b.llmUsed && (
-        <div className="sig-bd-row">
-          <span className="sig-bd-k">LLM</span>
-          <span className="sig-bd-v muted small">{b.llmNote}</span>
-        </div>
-      )}
-      <div className={`sig-bd-final ${willTrade ? 'pos' : 'muted'}`}>
-        Emin olma: <b>{conf}%</b> {willTrade ? '✓ işlem açılır' : `· eşik %${TRADE_THRESHOLD} altı`}
-      </div>
-      {b.newsHeadlines.length > 0 && (
-        <div className="sig-bd-news">
-          {b.newsHeadlines.map((h, i) => (
-            <div key={i} className="muted small">
-              • {h}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function SignalsView({ signals }: { signals: TradeSignal[] }): JSX.Element {
-  if (!signals.length) return <div className="muted card">sinyal yok — bot çalışıyor mu?</div>
-  return (
-    <div className="siglist">
-      {signals.slice(0, 16).map((s) => {
-        const conf = Math.round((s.breakdown?.finalConfidence ?? s.confidence) * 100)
-        const willTrade = conf >= TRADE_THRESHOLD && s.action !== 'HOLD'
-        return (
-          <div className={`sigcard ${willTrade ? 'trade' : ''}`} key={s.id}>
-            <div className="sigcard-head">
-              <span className={`tag ${s.action.toLowerCase()}`}>{s.action}</span>
-              <b>{s.base}</b>
-              <span className={`sig-conf ${willTrade ? 'pos' : 'muted'}`}>{conf}%</span>
-              <span className="muted small">{s.source}</span>
-            </div>
-            <SignalBreakdownView s={s} />
-            <Indicators tech={s.technical} />
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function ArbitrageView({ arbs }: { arbs: ArbitrageOpportunity[] }): JSX.Element {
-  if (!arbs.length) return <div className="muted card">fırsat yok (gas + slippage düşülmüş net)</div>
-  return (
-    <div className="arblist">
-      {arbs.map((o) => (
-        <div className="arb card" key={o.id}>
-          <div className="arb-top">
-            <b>{o.base}</b>
-            <span className="pos">+{usd(o.estNetProfitUsd)}</span>
-            <span className="muted small">net · {o.spreadPct.toFixed(2)}% spread</span>
-          </div>
-          <div className="muted small">
-            Al {CHAIN_NAMES[o.buyChain] ?? o.buyChain} {o.buyDex} @ {usd(o.buyPrice)} → Sat{' '}
-            {CHAIN_NAMES[o.sellChain] ?? o.sellChain} {o.sellDex} @ {usd(o.sellPrice)}
-          </div>
-          <div className="muted small">İşlem büyüklüğü ≈ {usd(o.notionalUsd)}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function TradesView({ trades, logs }: { trades: TradeOrder[]; logs: string[] }): JSX.Element {
-  return (
-    <div className="grid">
-      <div className="card span2">
-        <h3>İşlemler</h3>
-        <div className="scroll">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Zaman</th>
-                <th>Mod</th>
-                <th>Yön</th>
-                <th>Token</th>
-                <th>Adet</th>
-                <th>Fiyat</th>
-                <th>Ücret</th>
-                <th>Durum</th>
-                <th>Neden</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trades.map((t) => (
-                <tr key={t.id}>
-                  <td className="muted small">{new Date(t.timestamp).toLocaleTimeString()}</td>
-                  <td>{t.mode}</td>
-                  <td className={t.side === 'BUY' ? 'pos' : 'neg'}>{t.side}</td>
-                  <td>{t.base}</td>
-                  <td>{t.amount.toFixed(4)}</td>
-                  <td>{usd(t.filledPrice || t.price)}</td>
-                  <td className="muted">{usd(t.feeUsd ?? 0)}</td>
-                  <td className={t.status === 'filled' ? 'pos' : t.status === 'failed' ? 'neg' : ''}>
-                    {t.status}
-                  </td>
-                  <td className="muted small reason" title={t.reason ?? ''}>
-                    {t.reason ?? '—'}
-                  </td>
-                </tr>
-              ))}
-              {!trades.length && (
-                <tr>
-                  <td colSpan={9} className="muted">
-                    işlem yok
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>Log</h3>
-        <div className="scroll logbox">
-          {logs.map((l, i) => (
-            <div key={i} className="logline">
-              {l}
-            </div>
-          ))}
-          {!logs.length && <div className="muted">—</div>}
         </div>
       </div>
     </div>

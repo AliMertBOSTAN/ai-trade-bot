@@ -106,7 +106,7 @@ class LiveBroker:
             amount_in = int(order.amount * (10 ** base.decimals))
 
         try:
-            gas_gwei_ok, gas_gwei = True, w3.eth.gas_price / 1e9
+            gas_gwei = w3.eth.gas_price / 1e9
             if gas_gwei > self.risk.max_gas_gwei:
                 raise RuntimeError(f"Gas {gas_gwei:.1f} gwei tavanı aştı")
 

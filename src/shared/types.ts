@@ -135,6 +135,12 @@ export interface TechnicalSnapshot {
   squeeze_momentum?: number
   wavetrend1?: number
   wavetrend2?: number
+  // --- pattern / piyasa-yapısı (TradingView'den uyarlanan) ---
+  ma_cross_dir?: number // +1 long / -1 short
+  rsi_div?: number // +1 boğa / -1 ayı uyumsuzluk
+  smc_trend?: number // +1 / -1 SMC yapı (BOS/CHoCH)
+  fvg_bias?: number // +1 / -1 Fair Value Gap
+  swing_trend?: number // +1 yükseliş (HH+HL) / -1 düşüş (LH+LL) / 0 yatay
 }
 
 /** Güvenin nasıl hesaplandığı: teknik + haber kırılımı (UI'da hep gösterilir). */
@@ -194,7 +200,18 @@ export interface TradeOrder {
   feeUsd?: number
   reason?: string
   signalId?: string
+  /** İşlem yeri tipi: 'dex' (zincir-üstü, gas var) | 'cex' (borsa). */
+  venueType?: 'dex' | 'cex'
+  /** İşlem nonce'u (live: gerçek zincir; paper: simüle sayaç; -1 = yok). */
+  nonce?: number
   timestamp: number
+}
+
+export interface WalletInfo {
+  address: string | null
+  source: 'signer' | 'watch' | 'none'
+  can_sign: boolean
+  mode: string
 }
 
 export interface Position {
@@ -207,6 +224,13 @@ export interface Position {
   realizedPnlUsd: number
   unrealizedPnlUsd: number
   lastPrice: number
+  // Türetilmiş/zenginleştirilmiş alanlar (backend Position.to_dict)
+  side?: 'LONG' | 'SHORT'
+  costUsd?: number
+  valueUsd?: number
+  pnlPct?: number
+  dex?: string
+  openedTs?: number
 }
 
 export interface PortfolioSnapshot {
@@ -356,22 +380,120 @@ export interface GasInfo {
   swap_usd: number
 }
 
+// ---- Keşfet / Piyasalar (/markets) ----
+export type MarketStatus = 'live' | 'coming_soon'
+
+export interface MarketDescriptor {
+  id: string
+  label: string
+  asset_class: string // 'crypto' | 'equity' | ...
+  status: MarketStatus
+}
+
+export interface MarketInstrument {
+  market: string // MarketDescriptor.id (örn. 'dex' | 'binance' | 'hyperliquid')
+  symbol: string
+  quote: string
+  venue: string
+  chain_id?: number | null
+  price: number
+  change_pct_24h?: number | null
+  liquidity_usd?: number | null
+  volume_usd?: number | null
+  // perp (kaldıraçlı) piyasalar için opsiyonel alanlar (örn. Hyperliquid)
+  kind?: string // 'spot' | 'perp'
+  max_leverage?: number
+  funding_pct?: number // saatlik funding (%)
+  open_interest_usd?: number
+  // meme / DEX (örn. Solana) için opsiyonel alanlar
+  market_cap_usd?: number
+  url?: string // DexScreener vb. dış sayfa
+}
+
+export interface MarketsResponse {
+  markets: MarketDescriptor[]
+  instruments: MarketInstrument[]
+}
+
 // ---- LLM analist raporu (/analyst) ----
 export interface AnalystLlm {
+  bias?: 'AL' | 'SAT' | 'BEKLE'
   sentiment?: 'BULLISH' | 'BEARISH' | 'NEUTRAL'
   confidence?: number
   summary?: string
+  chart_view?: string
+  crowd_view?: string
   cex_dex_view?: string
   news_impact?: string
   risks?: string[]
   raw?: string
   note?: string
+  heuristic?: boolean
+}
+
+// ---- Balina (whale) takibi ----
+export interface WhalePressure {
+  score: number // -1 satış .. +1 alım
+  buy_usd: number
+  sell_usd: number
+  buy_count: number
+  sell_count: number
+  big_count: number
+  min_usd: number
+}
+export interface WhaleWall {
+  price: number
+  qty: number
+  usd: number
+}
+export interface WhaleTrade {
+  price: number
+  qty: number
+  usd: number
+  side: 'buy' | 'sell'
+  time: number
+}
+export interface WhaleSummary {
+  symbol: string
+  label: string // "balina alımı" | "balina satışı" | "dengeli"
+  pressure: WhalePressure
+  walls: { bids: WhaleWall[]; asks: WhaleWall[] }
+  recent: WhaleTrade[]
+}
+
+export interface DerivativesSummary {
+  symbol: string
+  funding: number
+  funding_pct: number
+  oi_change_pct: number
+  ls_ratio: number
+  long_pct?: number | null
+  short_pct?: number | null
+  squeeze: {
+    score: number
+    direction: string
+    cascade: boolean
+    notes: string[]
+  }
+  ok: boolean
+}
+
+export interface OnchainSignal {
+  enabled: boolean
+  score: number
+  note?: string
+  total_exchange_eth?: number
+  wallets?: Record<string, number>
 }
 
 export interface AnalystReport {
   symbol: string
   ts: number
   market: MarketSnapshot
+  technical?: { action?: string; confidence?: number; rationale?: string; price?: number } | null
+  whales?: WhaleSummary | null
+  derivatives?: DerivativesSummary | null
+  onchain?: OnchainSignal | null
   headlines: NewsItem[]
   llm: AnalystLlm | null
   llm_used: boolean

@@ -42,6 +42,13 @@ export default function Indicators({ tech }: { tech: TechnicalSnapshot }): JSX.E
   const sqMom = tech.squeeze_momentum ?? 0
   const macdUp = (tech.macd ?? 0) > (tech.macd_signal ?? 0)
   const emaUp = (tech.ema_fast ?? 0) > (tech.ema_slow ?? 0)
+  const maX = tech.ma_cross_dir ?? 0
+  const rsiD = tech.rsi_div ?? 0
+  const smc = tech.smc_trend ?? 0
+  const fvg = tech.fvg_bias ?? 0
+  const sw = tech.swing_trend ?? 0
+  const tri = (v: number): string => (v > 0 ? '▲' : v < 0 ? '▼' : '—')
+  const triTone = (v: number): Tone => (v > 0 ? 'pos' : v < 0 ? 'neg' : 'neu')
 
   return (
     <div className="ind-grid">
@@ -80,6 +87,21 @@ export default function Indicators({ tech }: { tech: TechnicalSnapshot }): JSX.E
         value={sqOn ? 'ON' : (sqMom >= 0 ? '▲' : '▼')}
         tone={sqOn ? 'neu' : sqMom >= 0 ? 'pos' : 'neg'}
         hint="TTM Squeeze sıkışma/momentum"
+      />
+      <Tile label="MA Cross" value={tri(maX)} tone={triTone(maX)} hint="SMA crossover (TW)" />
+      <Tile
+        label="RSI Div"
+        value={rsiD > 0 ? 'BOĞA' : rsiD < 0 ? 'AYI' : '—'}
+        tone={triTone(rsiD)}
+        hint="RSI uyumsuzluk (TW)"
+      />
+      <Tile label="SMC" value={tri(smc)} tone={triTone(smc)} hint="Yapı BOS/CHoCH (LuxAlgo)" />
+      <Tile label="FVG" value={tri(fvg)} tone={triTone(fvg)} hint="Fair Value Gap (SMC)" />
+      <Tile
+        label="Yapı"
+        value={sw > 0 ? 'HH-HL' : sw < 0 ? 'LH-LL' : '—'}
+        tone={triTone(sw)}
+        hint="Trend yapısı: yükselen tepe+dip / düşen tepe+dip (Dow)"
       />
     </div>
   )

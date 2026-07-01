@@ -1,12 +1,12 @@
-"""Geçmiş mumlar üzerinde strateji backtest'i.
+"""Geçmiş mumlar üzerinde strateji backtest'i (maliyet-farkında).
 
-Rolling pencere ile teknik sinyal üretir (LLM kapalı - hız ve determinizm),
-paper broker muhasebesiyle simüle eder ve performans metrikleri döndürür.
+Rolling pencere ile teknik sinyal üretir (LLM kapalı - hız/determinizm), paper
+broker muhasebesiyle (slippage + DEX fee + gas) simüle eder ve risk-ayarlı
+performans metrikleri döndürür.
 """
 from __future__ import annotations
 
-import math
-
+from engine.analytics import metrics as _metrics
 from engine.config.settings import RiskConfig
 from engine.indicators.technical import compute_snapshot
 from engine.models import TradeOrder, TradeSignal
@@ -14,6 +14,12 @@ from engine.risk.manager import RiskManager
 from engine.signals.engine import _rule_decision
 from engine.trading.paper_broker import PaperBroker
 from engine.trading.portfolio import Portfolio
+
+# interval -> yıldaki periyot sayısı (Sharpe/Sortino/Calmar yıllıklandırması)
+_PERIODS_PER_YEAR = {
+    "1m": 525600, "5m": 105120, "15m": 35040, "30m": 17520,
+    "1h": 8760, "4h": 2190, "1d": 365,
+}
 
 
 def _mk_signal(base, quote, action, conf, tech) -> TradeSignal:
@@ -23,7 +29,8 @@ def _mk_signal(base, quote, action, conf, tech) -> TradeSignal:
 
 
 def run_backtest(candles: list[dict], base: str, quote: str,
-                 starting_cash: float, risk: RiskConfig) -> dict:
+                 starting_cash: float, risk: RiskConfig,
+                 interval: str = "1h") -> dict:
     closes = [c["close"] for c in candles]
     highs = [c.get("high", c["close"]) for c in candles]
     lows = [c.get("low", c["close"]) for c in candles]
@@ -38,21 +45,17 @@ def run_backtest(candles: list[dict], base: str, quote: str,
 
     equity_curve: list[dict] = []
     trades: list[TradeOrder] = []
-    win_sells = 0
-    total_sells = 0
+    trade_pnls: list[float] = []  # kapanan (SELL) işlemlerin gerçekleşen PnL'leri
 
     warmup = 30
     for i in range(warmup, len(closes)):
         window = closes[: i + 1]
         price = closes[i]
-        tech = compute_snapshot(
-            window, highs[: i + 1], lows[: i + 1], volumes[: i + 1]
-        )
+        tech = compute_snapshot(window, highs[: i + 1], lows[: i + 1], volumes[: i + 1])
         action, conf = _rule_decision(tech)
 
         portfolio.mark({key: price})
 
-        # açık pozisyonda stop-loss / take-profit önceliklidir
         pos = portfolio.positions.get(key)
         if pos and rm.check_stop_take(pos, price):
             action, conf = "SELL", 1.0
@@ -66,48 +69,32 @@ def run_backtest(candles: list[dict], base: str, quote: str,
                 else:
                     amount = pos.amount if pos else 0.0
                 if amount > 0:
-                    entry = pos.avg_entry if (action == "SELL" and pos) else 0.0
                     order = TradeOrder(mode="paper", chain_id=0, dex="backtest",
                                        base=base, quote=quote, side=action,
                                        amount=amount, price=price)
+                    before = portfolio.realized_pnl_usd
                     broker.execute(order)
                     trades.append(order)
                     if action == "SELL":
-                        total_sells += 1
-                        if order.filled_price > entry:
-                            win_sells += 1
+                        trade_pnls.append(portfolio.realized_pnl_usd - before)
 
         equity_curve.append({"t": candles[i]["t"], "equity": portfolio.equity_usd()})
 
-    eqs = [e["equity"] for e in equity_curve]
-    final = eqs[-1] if eqs else starting_cash
-    total_return = (final - starting_cash) / starting_cash * 100
-
-    peak = -math.inf
-    max_dd = 0.0
-    for e in eqs:
-        peak = max(peak, e)
-        if peak > 0:
-            max_dd = max(max_dd, (peak - e) / peak)
-
-    rets = [(eqs[j] - eqs[j - 1]) / eqs[j - 1]
-            for j in range(1, len(eqs)) if eqs[j - 1] > 0]
-    sharpe = 0.0
-    if len(rets) > 1:
-        mean = sum(rets) / len(rets)
-        var = sum((r - mean) ** 2 for r in rets) / len(rets)
-        std = math.sqrt(var)
-        if std > 0:
-            sharpe = mean / std * math.sqrt(252)
-
-    win_rate = (win_sells / total_sells) if total_sells else 0.0
+    eqs = [starting_cash] + [e["equity"] for e in equity_curve]
+    ppy = _PERIODS_PER_YEAR.get(interval, 8760)
+    summary = _metrics.summarize(eqs, trade_pnls=trade_pnls, periods_per_year=ppy)
 
     return {
         "trades": [t.to_dict() for t in trades],
         "equity_curve": equity_curve,
-        "total_return_pct": total_return,
-        "max_drawdown_pct": max_dd * 100,
-        "win_rate": win_rate,
-        "sharpe": sharpe,
-        "final_equity_usd": final,
+        "total_return_pct": summary["total_return_pct"],
+        "max_drawdown_pct": summary["max_drawdown_pct"],
+        "win_rate": summary.get("win_rate", 0.0),
+        "sharpe": summary["sharpe"],
+        "sortino": summary["sortino"],
+        "calmar": summary["calmar"],
+        "profit_factor": summary.get("profit_factor", 0.0),
+        "expectancy_usd": summary.get("expectancy_usd", 0.0),
+        "num_closed_trades": summary.get("trades", 0),
+        "final_equity_usd": summary["final_equity_usd"],
     }

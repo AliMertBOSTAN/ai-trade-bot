@@ -1,20 +1,55 @@
 {
   "mode": "paper",
   "portfolio": {
-    "cash_usd": 9486.881917134777,
+    "cash_usd": 502.6603608984514,
     "positions": [
       {
-        "amount": 351617.4402250351,
-        "avg_entry": 0.00142911,
-        "base": "DEGEN",
+        "amount": 0.09644009025426736,
+        "avg_entry": 62525.86433817837,
+        "base": "WBTC",
+        "chain_id": 42161,
+        "dex": "",
+        "last_price": 59035.258644,
+        "opened_ts": 0,
+        "quote": "USDC",
+        "realized_pnl_usd": 0.0
+      },
+      {
+        "amount": 0.00843507396007001,
+        "avg_entry": 59572.68452875893,
+        "base": "BTCB",
+        "chain_id": 56,
+        "dex": "",
+        "last_price": 60105.78490336585,
+        "opened_ts": 0,
+        "quote": "USDT",
+        "realized_pnl_usd": 0.0
+      },
+      {
+        "amount": 0.32154031392231647,
+        "avg_entry": 1562.790039825,
+        "base": "WETH",
         "chain_id": 8453,
-        "last_price": 0.00142911,
+        "dex": "Uniswap V3",
+        "last_price": 1554.914031,
+        "opened_ts": 1782401347872,
+        "quote": "USDC",
+        "realized_pnl_usd": 0.0
+      },
+      {
+        "amount": 22843.77303680892,
+        "avg_entry": 0.10284856895719065,
+        "base": "OP",
+        "chain_id": 10,
+        "dex": "Uniswap V3",
+        "last_price": 0.102326,
+        "opened_ts": 1782401363342,
         "quote": "USDC",
         "realized_pnl_usd": 0.0
       }
     ],
-    "realized_pnl_usd": -7.59588286522156
+    "realized_pnl_usd": -67.87011280569085
   },
-  "updated_at": 1781459436221,
-  "was_running": true
+  "updated_at": 1782407423188,
+  "was_running": false
 }

@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: execd — emir-iletim servisi
+  version: 0.1.0
+  description: >
+    ADR-0001. Python motoru doğrulanmış emirleri buraya iletir; execd iletim,
+    imzalama, simülasyon, çoklu-RPC yarışı ve Flashbots bundle'dan sorumludur.
+    Tek kaynak sözleşme: Python tipleri ve Rust serde struct'ları bundan üretilir/doğrulanır.
+servers:
+  - url: http://127.0.0.1:8788
+components:
+  schemas:
+    Envelope:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        data: { type: object }
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [VALIDATION, SIMULATION_REVERT, INSUFFICIENT_EDGE, GAS_CAP,
+                     NONCE_CONFLICT, RPC_UNAVAILABLE, KILL_SWITCH, DUPLICATE, INTERNAL]
+            message: { type: string }
+    SwapRequest:
+      type: object
+      required: [idempotency_key, chainId, dex, token_in, token_out, amount_in, min_out, deadline_s, recipient]
+      properties:
+        idempotency_key: { type: string }
+        chainId: { type: integer }
+        dex: { type: string }
+        token_in: { type: string }
+        token_out: { type: string }
+        amount_in: { type: string, description: "bigint string" }
+        min_out: { type: string, description: "bigint string" }
+        deadline_s: { type: integer }
+        recipient: { type: string }
+        mode: { type: string, enum: [paper, live], default: paper }
+    ArbRequest:
+      type: object
+      required: [idempotency_key, chainId, route, min_profit_usd]
+      properties:
+        idempotency_key: { type: string }
+        chainId: { type: integer }
+        route: { type: array, items: { type: object } }
+        min_profit_usd: { type: number }
+        use_flashbots: { type: boolean, default: false }
+        mode: { type: string, enum: [paper, live], default: paper }
+    PerpRequest:
+      type: object
+      required: [idempotency_key, venue, symbol, side, size]
+      properties:
+        idempotency_key: { type: string }
+        venue: { type: string, example: hyperliquid }
+        symbol: { type: string }
+        side: { type: string, enum: [BUY, SELL] }
+        size: { type: number }
+        price: { type: number, nullable: true }
+        reduce_only: { type: boolean, default: false }
+        tif: { type: string, enum: [Gtc, Ioc, Alo], default: Gtc }
+        mode: { type: string, enum: [paper, live], default: paper }
+paths:
+  /health:
+    get:
+      summary: Alt sistem durumu
+      responses:
+        "200": { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Envelope' } } } }
+  /simulate:
+    post:
+      summary: eth_call simülasyonu (revert/gas)
+      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Envelope' } } } } }
+  /execute/swap:
+    post:
+      summary: DEX swap (v2/v3)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SwapRequest' } } }
+      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Envelope' } } } } }
+  /execute/arb:
+    post:
+      summary: Atomik arbitraj + Flashbots
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ArbRequest' } } }
+      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Envelope' } } } } }
+  /execute/perp:
+    post:
+      summary: Hyperliquid perp emri
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PerpRequest' } } }
+      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Envelope' } } } } }
+  /cancel:
+    post:
+      summary: Perp emir iptal
+      responses: { "200": { description: ok } }
+  /nonce/{chainId}:
+    get:
+      parameters:
+        - { name: chainId, in: path, required: true, schema: { type: integer } }
+      responses: { "200": { description: ok } }
+  /metrics:
+    get:
+      summary: Prometheus metrikleri
+      responses: { "200": { description: ok } }
+  /fills:
+    get:
+      summary: WS dolum akışı (perp)
+      responses: { "101": { description: switching protocols (websocket) } }

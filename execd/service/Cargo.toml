@@ -1,0 +1,36 @@
+[package]
+name = "execd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "execd — emir-iletim servisi (axum + alloy). ADR-0001."
+
+[[bin]]
+name = "execd"
+path = "src/main.rs"
+
+[dependencies]
+execd-core = { path = "../core" }
+
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+dashmap.workspace = true
+
+# Ağ / EVM / sunucu
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["ws"] }
+alloy = { version = "0.3", default-features = false, features = [
+    "full", "reqwest-rustls-tls", "json-rpc", "sol-types",
+] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.23", features = ["rustls-tls-webpki-roots"] }
+futures = "0.3"
+
+# Gözlemlenebilirlik / yardımcılar
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+dotenvy = "0.15"
+anyhow = "1"
+zeroize = "1"

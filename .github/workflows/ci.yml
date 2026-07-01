@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  python:
+    name: Python (lint + tip-üret + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - name: Bağımlılıklar
+        run: pip install -r requirements-dev.txt
+      - name: Ruff (lint)
+        run: ruff check engine scripts tests
+      - name: Tip üretimi güncel mi? (Python↔TS drift koruması)
+        run: python scripts/gen_types.py --check
+      - name: pytest
+        run: pytest
+
+  web:
+    name: Web (typecheck + test + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Bağımlılıklar
+        run: npm ci
+      - name: TypeScript typecheck (--strict)
+        run: npm run typecheck
+      - name: Vitest
+        run: npm test
+      - name: Build (electron-vite)
+        run: npm run build
+
+  execd:
+    name: execd (Rust core test + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Core test (saf mantık)
+        working-directory: execd
+        run: cargo test -p execd-core
+      - name: Clippy (core)
+        working-directory: execd
+        run: cargo clippy -p execd-core -- -D warnings
+      - name: Tam servis derlemesi (alloy)
+        working-directory: execd
+        # Ağır bağımlılıklar; bilgilendirme amaçlı, bloklamasın.
+        continue-on-error: true
+        run: cargo build --release --bin execd
+
+  solidity:
+    name: Solidity (derleme)
+    runs-on: ubuntu-latest
+    # Sözleşme derlemesi bilgilendirme amaçlı; CI'yı bloklamasın.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: solc (solcjs) kur
+        run: npm install -g solc@0.8.26
+      - name: Derle
+        run: solcjs --bin --optimize contracts/ArbExecutor.sol || true

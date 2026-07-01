@@ -1,0 +1,20 @@
+{
+  "mode": "paper",
+  "portfolio": {
+    "cash_usd": 9486.881917134777,
+    "positions": [
+      {
+        "amount": 351617.4402250351,
+        "avg_entry": 0.00142911,
+        "base": "DEGEN",
+        "chain_id": 8453,
+        "last_price": 0.001558,
+        "quote": "USDC",
+        "realized_pnl_usd": 0.0
+      }
+    ],
+    "realized_pnl_usd": -7.59588286522156
+  },
+  "updated_at": 1781863359168,
+  "was_running": true
+}

@@ -1,0 +1,33 @@
+[project]
+name = "ai-trade-bot-engine"
+version = "0.1.0"
+description = "AI destekli çoklu-zincir DEX trade botu — Python çekirdek motor"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+# tests/ klasöründeki test_*.py dosyalarını çalıştır; proje kökünü import path'e ekle
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# venv ve üretilmiş dosyaları atla
+extend-exclude = [".venv", "out", "node_modules", "data"]
+
+[tool.ruff.lint]
+# Gerçek hata sınıflarına odaklan (stil değil): E9 sözdizimi, F pyflakes
+# (kullanılmayan import / tanımsız isim / yeniden tanım). Stil kuralları (E/UP/B)
+# mevcut doğrulanmış kodu bloklamasın diye kapalı; istenirse kademeli açılır.
+select = ["E9", "F"]
+ignore = [
+  "F401",  # __init__.py yeniden-export'ları için kullanılmayan import'a izin
+]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true   # web3/anthropic vb. stub'ları yok
+check_untyped_defs = false
+warn_unused_ignores = false
+exclude = "(\\.venv|out|node_modules|data)"

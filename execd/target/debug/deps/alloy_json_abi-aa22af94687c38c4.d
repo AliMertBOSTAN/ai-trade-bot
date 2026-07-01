@@ -1,0 +1,12 @@
+/sessions/beautiful-jolly-shannon/mnt/ai-trade-bot/execd/target/debug/deps/alloy_json_abi-aa22af94687c38c4.d: /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/lib.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/abi.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/item.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/param.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/internal_type.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/to_sol.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/utils.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/../README.md
+
+/sessions/beautiful-jolly-shannon/mnt/ai-trade-bot/execd/target/debug/deps/liballoy_json_abi-aa22af94687c38c4.rmeta: /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/lib.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/abi.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/item.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/param.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/internal_type.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/to_sol.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/utils.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/../README.md
+
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/lib.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/abi.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/item.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/param.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/internal_type.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/to_sol.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/utils.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-json-abi-0.8.26/src/../README.md:

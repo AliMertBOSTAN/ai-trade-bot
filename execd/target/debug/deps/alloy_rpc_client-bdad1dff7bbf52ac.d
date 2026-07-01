@@ -1,0 +1,12 @@
+/sessions/beautiful-jolly-shannon/mnt/ai-trade-bot/execd/target/debug/deps/alloy_rpc_client-bdad1dff7bbf52ac.d: /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/lib.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/batch.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/builder.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/builtin.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/call.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/client.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/poller.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/../README.md
+
+/sessions/beautiful-jolly-shannon/mnt/ai-trade-bot/execd/target/debug/deps/liballoy_rpc_client-bdad1dff7bbf52ac.rmeta: /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/lib.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/batch.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/builder.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/builtin.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/call.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/client.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/poller.rs /tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/../README.md
+
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/lib.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/batch.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/builder.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/builtin.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/call.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/client.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/poller.rs:
+/tmp/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alloy-rpc-client-0.3.6/src/../README.md:

@@ -1,0 +1,5 @@
+# Geliştirme/CI bağımlılıkları (çalışma zamanı için engine/requirements.txt'e bak)
+-r engine/requirements.txt
+pytest==8.3.2
+ruff==0.6.4
+mypy==1.11.2

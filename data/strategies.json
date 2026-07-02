@@ -1,0 +1,22 @@
+[
+  {
+    "name": "hybrid",
+    "weight": 2.0,
+    "enabled": true
+  },
+  {
+    "name": "trend",
+    "weight": 1.5,
+    "enabled": true
+  },
+  {
+    "name": "mean_reversion",
+    "weight": 2.0,
+    "enabled": true
+  },
+  {
+    "name": "breakout",
+    "weight": 1.0,
+    "enabled": true
+  }
+]

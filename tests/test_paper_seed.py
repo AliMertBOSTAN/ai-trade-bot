@@ -6,12 +6,16 @@ def _bot(tmp_path, monkeypatch, seed="100"):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("TRADING_MODE", "paper")
     monkeypatch.setenv("PAPER_SEED_USD", seed)
-    # settings/orchestrator'i taze yukle
+    # settings/db/orchestrator'i taze yukle (store singleton'i yeni DATA_DIR'e gecsin)
     import importlib
     import engine.config.settings as st
     importlib.reload(st)
+    import engine.storage.db as db
+    importlib.reload(db)
     import engine.bot.orchestrator as orch
     importlib.reload(orch)
+    # Onceki testlerden sizan snapshot'lara karsi taze baslangic garantisi:
+    orch.store.save_state({})
     return orch.TradingBot()
 
 
@@ -41,8 +45,6 @@ def test_seed_idempotent(tmp_path, monkeypatch):
     assert b._seed_pending is False
 
 
-
-
 def test_seed_disabled_when_zero(tmp_path, monkeypatch):
     b = _bot(tmp_path, monkeypatch, seed="0")
     assert b._seed_pending is False
@@ -51,7 +53,7 @@ def test_seed_disabled_when_zero(tmp_path, monkeypatch):
 def test_reset_paper_rearms_seed(tmp_path, monkeypatch):
     b = _bot(tmp_path, monkeypatch)
     b._maybe_seed({"1:WETH": 2500.0})
-    # şimdi sıfırla
+    # simdi sifirla
     r = b.reset_paper()
     assert r["ok"] is True
     assert b._seed_pending is True

@@ -13,7 +13,9 @@ import ArbitrageView from './views/ArbitrageView'
 import TradesView from './views/TradesView'
 import PositionsTable from './components/PositionsTable'
 import ChainsPanel from './components/ChainsPanel'
-import { CHAIN_NAMES, TABS, usd, type Tab } from './lib/ui'
+import PerformancePanel from './components/PerformancePanel'
+import { CHAIN_NAMES, TABS, TAB_HINTS, TRADE_THRESHOLD, usd, type Tab } from './lib/ui'
+import type { LivePreflight } from './api'
 import type {
   ArbitrageOpportunity,
   BotState,
@@ -38,10 +40,20 @@ export default function App(): JSX.Element {
   const [connected, setConnected] = useState(false)
   const [wallet, setWallet] = useState<WalletInfo | null>(null)
   const [walletModal, setWalletModal] = useState(false)
+  // Paper sıfırlama modalı: tutar + nakit/ETH başlangıç seçimi
+  const [resetModal, setResetModal] = useState(false)
+  const [resetAmount, setResetAmount] = useState('1000')
+  const [resetCash, setResetCash] = useState(false)
+  // Live ön-uçuş kontrolü: geçmeden önce cüzdan/RPC/bakiye raporu göster
+  const [preflight, setPreflight] = useState<LivePreflight | null>(null)
+  const [preflightModal, setPreflightModal] = useState(false)
+  const [preflightBusy, setPreflightBusy] = useState(false)
   const [walletInput, setWalletInput] = useState('')
   const [walletErr, setWalletErr] = useState('')
   const [wsStatus, setWsStatus] = useState<ConnStatus>('connecting')
   const [tab, setTab] = useState<Tab>('overview')
+  // İşlem eşiği backend'ten okunur (risk.min_confidence); sabit yazılmaz.
+  const [tradeThreshold, setTradeThreshold] = useState<number>(TRADE_THRESHOLD)
   const { t, lang, setLang } = useI18n()
   const logRef = useRef<string[]>([])
 
@@ -86,6 +98,13 @@ export default function App(): JSX.Element {
     refresh()
     refreshGas()
     api.wallet().then(setWallet).catch(() => {})
+    api
+      .config()
+      .then((c) => {
+        const mc = (c as { risk?: { min_confidence?: number } }).risk?.min_confidence
+        if (typeof mc === 'number' && mc > 0) setTradeThreshold(Math.round(mc * 100))
+      })
+      .catch(() => {})
     const poll = setInterval(refresh, 5000)
     const gasPoll = setInterval(refreshGas, 15000)
     const off = connectEvents((e) => {
@@ -142,7 +161,7 @@ export default function App(): JSX.Element {
   const shortAddr = (a?: string | null): string =>
     a ? `${a.slice(0, 6)}…${a.slice(-4)}` : ''
 
-  const switchMode = async (mode: 'paper' | 'live'): Promise<void> => {
+  const doSwitchMode = async (mode: 'paper' | 'live'): Promise<void> => {
     try {
       const s = await api.setMode(mode)
       setState(s)
@@ -150,6 +169,24 @@ export default function App(): JSX.Element {
       if (s.message) pushLog(`UYARI: ${s.message}`)
     } catch (err) {
       pushLog(`Mod değişimi başarısız: ${(err as Error).message}`)
+    }
+  }
+
+  const switchMode = async (mode: 'paper' | 'live'): Promise<void> => {
+    if (mode !== 'live') {
+      await doSwitchMode(mode)
+      return
+    }
+    // Live: önce ön-uçuş raporu göster; kullanıcı onaylarsa geç.
+    setPreflightBusy(true)
+    try {
+      const p = await api.livePreflight()
+      setPreflight(p)
+      setPreflightModal(true)
+    } catch {
+      pushLog('Ön kontrol alınamadı — engine çalışıyor mu?')
+    } finally {
+      setPreflightBusy(false)
     }
   }
 
@@ -219,9 +256,10 @@ export default function App(): JSX.Element {
             <button
               className={state.mode === 'live' ? 'active live' : ''}
               aria-pressed={state.mode === 'live'}
+              disabled={preflightBusy}
               onClick={() => switchMode('live')}
             >
-              {t('mode.live')}
+              {preflightBusy ? '⏳' : t('mode.live')}
             </button>
           </div>
           <button
@@ -260,6 +298,8 @@ export default function App(): JSX.Element {
         ))}
       </nav>
 
+      {TAB_HINTS[tab] && <div className="tab-hint">ℹ️ {TAB_HINTS[tab]}</div>}
+
       <main className="content">
         {tab === 'overview' && (
           <Overview
@@ -267,20 +307,12 @@ export default function App(): JSX.Element {
             portfolio={portfolio}
             prices={prices}
             gas={gas}
-            onResetPaper={async () => {
+            onResetPaper={() => {
               if (state.mode === 'live') {
                 pushLog('Live modda paper sıfırlama yapılmaz')
                 return
               }
-              if (!window.confirm('Paper portföy sıfırlanıp $100 değerinde ETH ile başlatılacak. Onaylıyor musun?'))
-                return
-              const r = await api.resetPaper()
-              if (r.ok) {
-                setTrades([])
-                pushLog(`Paper sıfırlandı → $${r.seed_usd} ${r.asset}`)
-              } else {
-                pushLog(`Sıfırlama başarısız: ${r.reason ?? 'bilinmiyor'}`)
-              }
+              setResetModal(true)
             }}
           />
         )}
@@ -293,7 +325,7 @@ export default function App(): JSX.Element {
         <div style={{ display: tab === 'market' ? 'contents' : 'none' }}>
           <MarketPanel active={tab === 'market'} />
         </div>
-        {tab === 'signals' && <SignalsView signals={signals} />}
+        {tab === 'signals' && <SignalsView signals={signals} threshold={tradeThreshold} />}
         {tab === 'strategies' && <StrategiesView active={tab === 'strategies'} />}
         {tab === 'arbitrage' && <ArbitrageView arbs={arbs} />}
         {tab === 'news' && <NewsPanel />}
@@ -311,6 +343,186 @@ export default function App(): JSX.Element {
           />
         )}
       </main>
+
+      {preflightModal && preflight && (
+        <div className="modal-overlay" onClick={() => setPreflightModal(false)}>
+          <div className="modal preflight" onClick={(e) => e.stopPropagation()}>
+            <h3>🛫 Canlıya Geçiş Ön Kontrolü</h3>
+            <div className="pf-checks">
+              <PfCheck ok={preflight.checks.signer_wallet} label="İmzalayıcı cüzdan">
+                {preflight.wallet_address
+                  ? `${preflight.wallet_address.slice(0, 8)}…${preflight.wallet_address.slice(-6)}`
+                  : 'WALLET_PRIVATE_KEY veya keystore tanımlı değil'}
+              </PfCheck>
+              <PfCheck ok={preflight.checks.rpc_available} label="RPC bağlantısı">
+                {preflight.checks.rpc_available
+                  ? 'en az bir zincir erişilebilir'
+                  : 'hiçbir zincire bağlanılamadı'}
+              </PfCheck>
+              <PfCheck ok={preflight.checks.funded_chain} label="Bakiye">
+                {preflight.checks.funded_chain
+                  ? 'en az bir zincirde stable + gas var'
+                  : 'hiçbir zincirde yeterli stable (≥$10) + native gas yok'}
+              </PfCheck>
+              <PfCheck ok={preflight.checks.llm_ready} label="LLM">
+                {preflight.llm_provider === 'none'
+                  ? 'kapalı (saf teknik karar)'
+                  : `${preflight.llm_provider} yapılandırılmış`}
+              </PfCheck>
+              <PfCheck ok={preflight.checks.kill_switch_clear} label="Kill-switch">
+                {preflight.checks.kill_switch_clear
+                  ? 'temiz'
+                  : 'AKTİF — günlük zarar limiti aşılmış'}
+              </PfCheck>
+            </div>
+            <div className="scroll" style={{ maxHeight: 180 }}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Zincir</th>
+                    <th>RPC</th>
+                    <th>Gas</th>
+                    <th>Stable</th>
+                    <th>Native</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preflight.chains.map((c) => (
+                    <tr key={c.chain_id}>
+                      <td>
+                        <b>{c.name}</b>
+                      </td>
+                      <td className={c.rpc_ok ? 'pos' : 'neg'}>{c.rpc_ok ? '✓' : '✗'}</td>
+                      <td className={c.gas_ok === false ? 'neg' : 'muted'}>
+                        {c.gas_gwei != null ? `${c.gas_gwei} gwei` : '—'}
+                      </td>
+                      <td className={(c.stable_balance ?? 0) >= 10 ? 'pos' : 'muted'}>
+                        {c.stable_balance != null
+                          ? `${c.stable_balance} ${c.stable_symbol}`
+                          : '—'}
+                      </td>
+                      <td className={(c.native_balance ?? 0) > 0 ? 'pos' : 'muted'}>
+                        {c.native_balance != null
+                          ? `${c.native_balance} ${c.native_symbol}`
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="muted small" style={{ marginTop: 8 }}>
+              Limitler: pozisyon ≤ ${preflight.limits.max_position_usd} · günlük zarar ≤ $
+              {preflight.limits.max_daily_loss_usd} · gas ≤ {preflight.limits.max_gas_gwei} gwei
+              · slippage {preflight.limits.slippage_bps / 100}% · günlük harcama{' '}
+              {preflight.limits.daily_spend_limit_usd > 0
+                ? `≤ $${preflight.limits.daily_spend_limit_usd}`
+                : 'LİMİTSİZ (MAX_DAILY_SPEND_USD önerilir)'}
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setPreflightModal(false)}>
+                Vazgeç (paper'da kal)
+              </button>
+              <button
+                className="btn warn"
+                disabled={!preflight.checks.signer_wallet || !preflight.checks.rpc_available}
+                title={
+                  preflight.ready
+                    ? 'Gerçek fonla işlem başlar'
+                    : 'Eksik kontroller var — yine de geçilebilir ama önerilmez'
+                }
+                onClick={async () => {
+                  setPreflightModal(false)
+                  await doSwitchMode('live')
+                }}
+              >
+                {preflight.ready ? '✓ Live moduna geç' : '⚠ Yine de Live moduna geç'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resetModal && (
+        <div className="modal-overlay" onClick={() => setResetModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>↺ Paper Portföyü Sıfırla</h3>
+            <p className="muted small">
+              Tüm pozisyonlar ve işlem geçmişi silinir; portföy aşağıdaki tutarla
+              yeniden başlar. Bu işlem geri alınamaz.
+            </p>
+            <label className="muted small" htmlFor="reset-amount">
+              Başlangıç tutarı (USD)
+            </label>
+            <input
+              id="reset-amount"
+              className="wallet-input"
+              type="number"
+              min={10}
+              step={100}
+              autoFocus
+              value={resetAmount}
+              onChange={(e) => setResetAmount(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setResetModal(false)
+              }}
+            />
+            <div className="reset-quick">
+              {[100, 1000, 5000, 10000].map((v) => (
+                <button
+                  key={v}
+                  className={`btn small ${Number(resetAmount) === v ? 'primary' : ''}`}
+                  onClick={() => setResetAmount(String(v))}
+                >
+                  ${v.toLocaleString('en-US')}
+                </button>
+              ))}
+            </div>
+            <label className="reset-cash-row">
+              <input
+                type="checkbox"
+                checked={resetCash}
+                onChange={(e) => setResetCash(e.target.checked)}
+              />
+              <span>
+                Nakit olarak başlat{' '}
+                <span className="muted small">
+                  (işaretli değilse tutar ETH'ye çevrilerek başlar)
+                </span>
+              </span>
+            </label>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setResetModal(false)}>
+                İptal
+              </button>
+              <button
+                className="btn warn"
+                onClick={async () => {
+                  const amount = Number(resetAmount)
+                  if (!Number.isFinite(amount) || amount < 10) {
+                    pushLog('Geçersiz tutar — en az $10 girilmeli')
+                    return
+                  }
+                  const r = await api.resetPaper(amount, resetCash)
+                  if (r.ok) {
+                    setTrades([])
+                    setResetModal(false)
+                    pushLog(
+                      `Paper sıfırlandı → $${amount.toLocaleString('en-US')} ${
+                        resetCash ? 'nakit' : r.asset ?? 'ETH'
+                      }`
+                    )
+                  } else {
+                    pushLog(`Sıfırlama başarısız: ${r.reason ?? 'bilinmiyor'}`)
+                  }
+                }}
+              >
+                Sıfırla ve Başlat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {walletModal && (
         <div className="modal-overlay" onClick={() => setWalletModal(false)}>
@@ -354,6 +566,42 @@ export default function App(): JSX.Element {
   )
 }
 
+/* ---- Ana sayfa panel ızgarası: sürükle-bırak + boyutlandırma ----
+   Kart sırası/genişliği/yüksekliği localStorage'da saklanır ve kalıcıdır.
+   ⠿ tutamacıyla sürükle, ⇔ ile tam/yarım genişlik, alt kenardan yükseklik. */
+type DashSpan = 1 | 2
+interface DashLayout {
+  order: string[]
+  span: Record<string, DashSpan>
+  h: Record<string, number>
+}
+
+const DASH_KEY = 'dash-layout-v1'
+const DASH_DEFAULT: DashLayout = {
+  order: ['equity', 'perf', 'tech', 'chains', 'positions', 'gas', 'prices'],
+  span: { equity: 1, perf: 1, tech: 1, chains: 1, positions: 1, gas: 1, prices: 2 },
+  h: {}
+}
+
+function loadDashLayout(): DashLayout {
+  try {
+    const raw = localStorage.getItem(DASH_KEY)
+    if (!raw) return DASH_DEFAULT
+    const p = JSON.parse(raw) as Partial<DashLayout>
+    const order = (Array.isArray(p.order) ? p.order : []).filter((id) =>
+      DASH_DEFAULT.order.includes(id)
+    )
+    for (const id of DASH_DEFAULT.order) if (!order.includes(id)) order.push(id)
+    return {
+      order,
+      span: { ...DASH_DEFAULT.span, ...(p.span ?? {}) },
+      h: { ...(p.h ?? {}) }
+    }
+  } catch {
+    return DASH_DEFAULT
+  }
+}
+
 function Overview({
   equity,
   portfolio,
@@ -367,26 +615,80 @@ function Overview({
   gas: GasInfo[]
   onResetPaper?: () => void
 }): JSX.Element {
-  return (
-    <div className="grid">
+  const [layout, setLayout] = useState<DashLayout>(loadDashLayout)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [overId, setOverId] = useState<string | null>(null)
+  const refs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  const save = (l: DashLayout): void => {
+    setLayout(l)
+    try {
+      localStorage.setItem(DASH_KEY, JSON.stringify(l))
+    } catch {
+      /* dolu olabilir; kritik değil */
+    }
+  }
+
+  const dropOn = (targetId: string): void => {
+    if (dragId && dragId !== targetId) {
+      const order = layout.order.filter((x) => x !== dragId)
+      order.splice(order.indexOf(targetId), 0, dragId)
+      save({ ...layout, order })
+    }
+    setDragId(null)
+    setOverId(null)
+  }
+
+  const toggleSpan = (id: string): void => {
+    const span: Record<string, DashSpan> = {
+      ...layout.span,
+      [id]: layout.span[id] === 2 ? 1 : 2
+    }
+    save({ ...layout, span })
+  }
+
+  // Native resize (alt kenar) bırakılınca yüksekliği kalıcılaştır.
+  const persistHeight = (id: string): void => {
+    const el = refs.current[id]
+    if (!el) return
+    const cur = el.offsetHeight
+    const stored = layout.h[id]
+    if (el.style.height && cur > 0 && cur !== stored) {
+      save({ ...layout, h: { ...layout.h, [id]: cur } })
+    }
+  }
+
+  const resetLayout = (): void => {
+    try {
+      localStorage.removeItem(DASH_KEY)
+    } catch {
+      /* yok say */
+    }
+    setLayout({ ...DASH_DEFAULT, h: {} })
+    for (const el of Object.values(refs.current)) if (el) el.style.height = ''
+  }
+
+  const cards: Record<string, JSX.Element> = {
+    equity: (
       <div className="card">
         <h3>Equity Eğrisi</h3>
         <div className="chartbox">
           <EquityChart data={equity} />
         </div>
       </div>
-
+    ),
+    tech: (
       <div className="card">
         <h3>Teknik Analiz</h3>
         <div className="chartbox">
           <TechnicalChart />
         </div>
       </div>
-
-      <ChainsPanel />
-
-      <PositionsTable positions={portfolio?.positions ?? []} onReset={onResetPaper} />
-
+    ),
+    perf: <PerformancePanel />,
+    chains: <ChainsPanel />,
+    positions: <PositionsTable positions={portfolio?.positions ?? []} onReset={onResetPaper} />,
+    gas: (
       <div className="card">
         <h3>Canlı Gas</h3>
         <div className="gaslist">
@@ -403,8 +705,9 @@ function Overview({
           )}
         </div>
       </div>
-
-      <div className="card span2">
+    ),
+    prices: (
+      <div className="card">
         <h3>Çoklu-Zincir Fiyatlar</h3>
         <div className="scroll">
           <table className="tbl">
@@ -440,6 +743,88 @@ function Overview({
           </table>
         </div>
       </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="dashgrid">
+        {layout.order.map((id) => (
+          <div
+            key={id}
+            ref={(el) => {
+              refs.current[id] = el
+            }}
+            className={`dash-item ${layout.span[id] === 2 ? 'span2' : ''} ${
+              overId === id ? 'drag-over' : ''
+            } ${dragId === id ? 'dragging' : ''}`}
+            style={layout.h[id] ? { height: layout.h[id] } : undefined}
+            onDragOver={(e) => {
+              if (!dragId || dragId === id) return
+              e.preventDefault()
+              setOverId(id)
+            }}
+            onDragLeave={() => setOverId((o) => (o === id ? null : o))}
+            onDrop={(e) => {
+              e.preventDefault()
+              dropOn(id)
+            }}
+            onMouseUp={() => persistHeight(id)}
+          >
+            <div className="dash-tools">
+              <span
+                className="dash-handle"
+                title="Sürükleyip başka bir kartın üzerine bırak"
+                draggable
+                onDragStart={(e) => {
+                  setDragId(id)
+                  e.dataTransfer.effectAllowed = 'move'
+                  const el = refs.current[id]
+                  if (el) e.dataTransfer.setDragImage(el, 60, 20)
+                }}
+                onDragEnd={() => {
+                  setDragId(null)
+                  setOverId(null)
+                }}
+              >
+                ⠿
+              </span>
+              <button
+                className="dash-size"
+                title={layout.span[id] === 2 ? 'Yarım genişliğe daralt' : 'Tam genişliğe yay'}
+                onClick={() => toggleSpan(id)}
+              >
+                ⇔
+              </button>
+            </div>
+            {cards[id]}
+          </div>
+        ))}
+      </div>
+      <div className="dash-foot muted small">
+        ⠿ ile kartları sürükle · ⇔ ile genişlik değiştir · alt kenardan yüksekliği çek ·{' '}
+        <button className="linklike" onClick={resetLayout}>
+          düzeni sıfırla
+        </button>
+      </div>
+    </>
+  )
+}
+
+function PfCheck({
+  ok,
+  label,
+  children
+}: {
+  ok: boolean
+  label: string
+  children?: React.ReactNode
+}): JSX.Element {
+  return (
+    <div className={`pf-check ${ok ? 'ok' : 'fail'}`}>
+      <span className="pf-ico">{ok ? '✅' : '❌'}</span>
+      <b>{label}</b>
+      <span className="muted small">{children}</span>
     </div>
   )
 }

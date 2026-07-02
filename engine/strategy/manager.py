@@ -52,6 +52,38 @@ STRATEGY_INFO: dict[str, dict] = {
         "regime": "Funding-tabanlı",
         "params": "funding_threshold",
     },
+    "momentum": {
+        "title": "Momentum (İvme)",
+        "desc": "Fiyat değişim HIZI güçlüyse (10-bar ROC + Awesome Osc. + DI onayı) "
+                "ivme yönünde işlem. Trendden farkı: EMA dizilimi beklemez, "
+                "hızlanmayı erken yakalar.",
+        "regime": "Trend (yukarı/aşağı)",
+        "params": "roc_min, adx_min",
+    },
+    "pullback": {
+        "title": "Geri Çekilme (Swing)",
+        "desc": "Yapısal yükseliş trendinde (EMA + Dow swing) kısa vadeli dipleri "
+                "ALIR, aşırı ısınmada kâr alır. Zirveden kovalamaz — trende "
+                "ucuz noktadan katılır.",
+        "regime": "Trend (yukarı)",
+        "params": "rsi_dip, rsi_exit, adx_min",
+    },
+    "squeeze": {
+        "title": "Sıkışma Patlaması",
+        "desc": "Bollinger, Keltner içine girince (TTM squeeze) bekler; sıkışma "
+                "AÇILINCA momentum yönünde girer (MACD + Supertrend onayı). "
+                "Sıkışma sürerken asla işlem açmaz.",
+        "regime": "Tüm rejimler",
+        "params": "mom_min",
+    },
+    "sentiment": {
+        "title": "Haber Duyarlılığı",
+        "desc": "Belirgin pozitif haber + teknik onay → AL; belirgin negatif haber "
+                "→ riskten kaçın (SAT). Haber tek başına yetmez, EMA yönü "
+                "onaylamalı. Haber yoksa beklemede kalır.",
+        "regime": "Tüm rejimler",
+        "params": "score_min",
+    },
 }
 
 

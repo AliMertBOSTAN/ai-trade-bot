@@ -126,3 +126,34 @@ def summarize(equity: list[float], trade_pnls: list[float] | None = None,
             "trades": ts["trades"],
         })
     return out
+
+
+def pnls_from_trades(trades: list[dict]) -> list[float]:
+    """İşlem geçmişinden kapanan satışların gerçekleşen PnL'leri (USD).
+
+    Ortalama maliyet yöntemi: BUY'lar ortalama girişi günceller; her SELL,
+    (satış fiyatı - ort. giriş) * miktar - ücret kadar PnL realize eder.
+    Satırlar recent_trades biçimindedir (camelCase anahtarlar, ts DESC olabilir).
+    """
+    rows = sorted(
+        (t for t in trades if t.get("status") == "filled"),
+        key=lambda t: t.get("timestamp") or 0)
+    book: dict[str, tuple[float, float]] = {}  # key -> (miktar, ort. giriş)
+    pnls: list[float] = []
+    for t in rows:
+        key = f"{t.get('chainId', 0)}:{t.get('base', '?')}"
+        px = float(t.get("filledPrice") or t.get("price") or 0.0)
+        amt = float(t.get("amount") or 0.0)
+        fee = float(t.get("feeUsd") or 0.0)
+        if px <= 0 or amt <= 0:
+            continue
+        cur_amt, avg = book.get(key, (0.0, 0.0))
+        if t.get("side") == "BUY":
+            new_amt = cur_amt + amt
+            avg = ((avg * cur_amt + px * amt) / new_amt) if new_amt > 0 else px
+            book[key] = (new_amt, avg)
+        elif t.get("side") == "SELL" and cur_amt > 0:
+            sell = min(amt, cur_amt)
+            pnls.append((px - avg) * sell - fee)
+            book[key] = (cur_amt - sell, avg)
+    return pnls

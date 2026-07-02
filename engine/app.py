@@ -27,6 +27,7 @@ from engine.marketdata import analyst as market_analyst
 from engine.marketdata import chart as market_chart
 from engine.marketdata import markets as market_markets
 from engine.marketdata import news as market_news
+from engine.marketdata.news_watcher import watcher as news_watcher
 from engine.util.logging import setup_logging
 
 setup_logging()
@@ -67,6 +68,17 @@ async def _startup() -> None:
             _lg.getLogger("ml").info("ML sinyal modeli yuklendi: %s", _mp)
     except Exception:
         pass
+    # Haber izleyici: 1-2 dk aralıkla yeni haberleri tarar, etkisini
+    # değerlendirir; event'leri WS'e taşır. Bot durumundan BAĞIMSIZ çalışır
+    # (UI haber akışı + sinyal motoru taze haber bias'ı buradan beslenir).
+    # NEWS_WATCHER=0 ile kapatılabilir.
+    try:
+        import os as _os
+        if _os.getenv("NEWS_WATCHER", "1").strip().lower() not in ("0", "false", "no"):
+            news_watcher.start(bot._emit)
+    except Exception as e:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger("app").warning("haber izleyici başlatılamadı: %s", e)
     # Önceki oturum çalışır durumdaysa snapshot'tan kaldığı yerden devam et.
     bot.maybe_resume()
 
@@ -137,7 +149,7 @@ def config():
         "enabled_chains": bot.enabled_chains,
         "starting_cash_usd": settings.starting_cash_usd,
         "llm_provider": settings.llm_provider,
-        "risk": settings.risk.__dict__,
+        "risk": bot.risk.__dict__,  # çalışma anı değerleri (eşik ayarlanabilir)
     }
 
 
@@ -171,6 +183,50 @@ class StrategyConfigBody(BaseModel):
 def strategies_config(body: StrategyConfigBody):
     """Stratejiyi aç/kapa ve/veya ağırlığını ayarla (kullanıcı kontrolü)."""
     return bot.set_strategy(body.name, enabled=body.enabled, weight=body.weight)
+
+
+class PresetBody(BaseModel):
+    name: str
+
+
+@app.post("/strategies/preset")
+def strategies_preset(body: PresetBody):
+    """Genel strateji profili: safe | balanced | aggressive."""
+    return bot.apply_preset(body.name)
+
+
+class RiskBody(BaseModel):
+    min_confidence: float
+
+
+class AdviceStrategy(BaseModel):
+    name: str
+    enabled: bool | None = None
+    weight: float | None = None
+
+
+class AdviceApplyBody(BaseModel):
+    strategies: list[AdviceStrategy]
+    min_confidence: float | None = None
+
+
+@app.get("/strategies/advice")
+def strategies_advice():
+    """AI destekli strateji önerisi üretir (uygulamaz). LLM yoksa kural-tabanlı."""
+    return bot.get_strategy_advice()
+
+
+@app.post("/strategies/advice/apply")
+def strategies_advice_apply(body: AdviceApplyBody):
+    """Kullanıcının onayladığı öneriyi uygular."""
+    return bot.apply_strategy_advice(
+        [s.model_dump() for s in body.strategies], body.min_confidence)
+
+
+@app.post("/risk/config")
+def risk_config(body: RiskBody):
+    """Pozisyon giriş eşiğini (min_confidence, 0..1) çalışma anında ayarla."""
+    return bot.set_min_confidence(body.min_confidence)
 
 
 @app.get("/chains")
@@ -209,13 +265,27 @@ def trades_clear(): return bot.clear_trades()
 
 class PaperResetBody(BaseModel):
     seed_usd: float | None = None
+    cash_only: bool | None = None
 
 
 @app.post("/portfolio/reset")
 def portfolio_reset(body: PaperResetBody | None = None):
-    """Paper portföyü sıfırla ve PAPER_SEED_USD değerinde ETH ile yeniden başlat."""
+    """Paper portföyü sıfırla; istenen tutar ve başlangıç türüyle yeniden başlat."""
     seed = body.seed_usd if body else None
-    return bot.reset_paper(seed_usd=seed)
+    cash_only = bool(body.cash_only) if body and body.cash_only is not None else False
+    return bot.reset_paper(seed_usd=seed, cash_only=cash_only)
+
+
+@app.get("/live/preflight")
+def live_preflight():
+    """Canlıya geçmeden önce ön-uçuş kontrolü (okuma-tek; tx göndermez)."""
+    return bot.live_preflight()
+
+
+@app.get("/performance")
+def performance():
+    """Risk-ayarlı performans metrikleri (Sharpe, MaxDD, win rate, ...)."""
+    return bot.get_performance()
 
 
 @app.get("/equity")
@@ -344,6 +414,25 @@ def chart(symbol: str | None = None, interval: str = "1h", limit: int = 200):
 def get_news(limit: int = 30, q: str | None = None):
     """Anlık kripto haber başlıkları (RSS). q ile filtrelenebilir."""
     return market_news.fetch_headlines(limit=limit, query=q)
+
+
+@app.get("/news/watch")
+def news_watch(limit: int = 30):
+    """Haber izleyici durumu + son değerlendirilen haberler (etki/yön/token).
+
+    İzleyici arka planda NEWS_POLL_INTERVAL_S aralıkla yeni haber tarar;
+    breaking olanlar WS'e "news" + "log" eventi olarak da düşer.
+    """
+    return {"status": news_watcher.status(),
+            "events": news_watcher.recent_events(min(limit, 100))}
+
+
+@app.get("/news/bias/{symbol}")
+def news_bias(symbol: str):
+    """Sembol için taze haber bias'ı + varsa alım freni gerekçesi."""
+    return {"symbol": symbol.upper(),
+            "bias": news_watcher.fresh_bias(symbol),
+            "guard": news_watcher.guard(symbol)}
 
 
 @app.get("/markets")

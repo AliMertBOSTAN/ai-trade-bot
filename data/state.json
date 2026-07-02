@@ -1,7 +1,7 @@
 {
   "mode": "paper",
   "portfolio": {
-    "cash_usd": 502.6603608984514,
+    "cash_usd": 498.7565567211156,
     "positions": [
       {
         "amount": 0.09644009025426736,
@@ -48,8 +48,8 @@
         "realized_pnl_usd": 0.0
       }
     ],
-    "realized_pnl_usd": -67.87011280569085
+    "realized_pnl_usd": -71.01225179642354
   },
-  "updated_at": 1782407423188,
+  "updated_at": 1782982364020,
   "was_running": false
 }

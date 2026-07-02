@@ -41,7 +41,9 @@ class Settings:
 
     llm_provider: str = os.getenv("LLM_PROVIDER", "deepseek")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
-    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    # DİKKAT: model adı API'de birebir geçerli olmalı; yanlış ad = her çağrı 404
+    # (LLM katmanı sessizce teknik karara düşer). Gerekirse .env ile geçersiz kıl.
+    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
     anthropic_base_url: str = os.getenv("ANTHROPIC_BASE_URL", "")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -57,6 +59,15 @@ class Settings:
     news_feeds: tuple = field(default_factory=lambda: tuple(
         u.strip() for u in os.getenv("NEWS_FEEDS", "").split(",") if u.strip()
     ))
+    # Haber izleyici (news_watcher): NEWS_WATCHER=0 kapatır. Aralık/pencere
+    # değerleri izleyici tarafından ÇALIŞMA ANINDA env'den okunur (testlerde
+    # değiştirilebilsin diye); buradaki alanlar /config görünürlüğü içindir.
+    news_watcher_enabled: bool = os.getenv(
+        "NEWS_WATCHER", "1").strip().lower() not in ("0", "false", "no")
+    news_poll_interval_s: float = float(os.getenv("NEWS_POLL_INTERVAL_S", "90"))
+    news_fresh_window_min: float = float(os.getenv("NEWS_FRESH_WINDOW_MIN", "45"))
+    news_llm_assess: bool = os.getenv(
+        "NEWS_LLM_ASSESS", "1").strip().lower() not in ("0", "false", "no")
 
     rpc: dict = field(default_factory=lambda: {
         1: os.getenv("RPC_ETHEREUM", ""),
@@ -74,9 +85,18 @@ class Settings:
         return self.trading_mode == "live"
 
     def assert_live_ready(self) -> None:
-        if not self.wallet_private_key:
-            raise RuntimeError(
-                "Live mod icin WALLET_PRIVATE_KEY gerekli. Guvenli degilse paper modda kalin.")
+        if self.wallet_private_key:
+            return
+        # Sifreli keystore da gecerli bir imzalayici kaynagidir
+        try:
+            from engine.security.keystore import load_private_key
+            if load_private_key():
+                return
+        except Exception:  # noqa: BLE001
+            pass
+        raise RuntimeError(
+            "Live mod icin WALLET_KEYSTORE_PATH(+PASSWORD) veya "
+            "WALLET_PRIVATE_KEY gerekli. Guvenli degilse paper modda kalin.")
 
     def validate(self) -> tuple[list[str], list[str]]:
         errors: list[str] = []
@@ -100,6 +120,9 @@ class Settings:
                             "LLM atlanir, saf teknik+haber karari kullanilir.")
         if self.poll_interval_ms < 1000:
             warnings.append(f"POLL_INTERVAL_MS cok dusuk ({self.poll_interval_ms}ms).")
+        if self.news_poll_interval_s < 30:
+            warnings.append(f"NEWS_POLL_INTERVAL_S cok dusuk ({self.news_poll_interval_s}s) "
+                            "-> 30 sn'ye kirpilir (RSS rate-limit korumasi).")
         if self.is_live:
             warnings.append("LIVE MOD: gercek fonla islem yapilabilir.")
         if self.risk.slippage_bps <= 0:

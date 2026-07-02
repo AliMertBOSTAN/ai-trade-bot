@@ -24,8 +24,47 @@ SYSTEM_PROMPT = (
     "Belirsizlikte HOLD ver. Momentum ve trendle çelişen sinyallerde "
     "confidence düşür. Sana ayrıca SON MUMLARIN fiyat-aksiyonu (gövde/fitil, "
     "formasyon, swing yapısı) verilir; grafiği bir teknik analist gibi OKU ve "
-    "mum yapısı göstergelerle çelişiyorsa bunu kararına/ gerekçene yansıt."
+    "mum yapısı göstergelerle çelişiyorsa bunu kararına/ gerekçene yansıt. "
+    "Varsa PİYASA VERİSİ (24s değişim/hacim, funding, long/short, balina "
+    "baskısı) ve SON DAKİKA HABERLERİ bölümlerini de tart: güçlü negatif "
+    "son-dakika haber varken BUY verme (HOLD'a çek veya confidence'ı sert "
+    "düşür); haber teknikle aynı yöndeyse confidence'ı bir miktar artır."
 )
+
+
+def _market_lines(ctx: dict | None) -> str:
+    """Opsiyonel piyasa bağlamı bölümü (24s istatistik + türev + balina)."""
+    if not ctx:
+        return ""
+    lines = ["== PİYASA VERİSİ =="]
+    if ctx.get("change_pct_24h") is not None:
+        lines.append(
+            f"24s değişim: {ctx['change_pct_24h']:+.2f}%  "
+            f"aralık: {ctx.get('low_24h', 0):.6g}-{ctx.get('high_24h', 0):.6g}  "
+            f"hacim: {ctx.get('volume_quote_24h', 0):,.0f}$")
+    if ctx.get("funding_pct") is not None:
+        lines.append(
+            f"Funding: {ctx['funding_pct']:+.4f}%  OI değişim: "
+            f"{ctx.get('oi_change_pct', 0):+.2f}%  L/S: {ctx.get('ls_ratio', 0)}"
+            + (f"  Squeeze: {ctx['squeeze_dir']}" if ctx.get("squeeze_dir") else ""))
+    if ctx.get("whale_label"):
+        lines.append(f"Balina baskısı: {ctx['whale_label']} "
+                     f"(skor {ctx.get('whale_score', 0):+.2f})")
+    return ("\n".join(lines) + "\n") if len(lines) > 1 else ""
+
+
+def _fresh_news_lines(fresh: list[dict] | None) -> str:
+    """Son-dakika haber bölümü: başlık + yaş + etki (izleyiciden gelir)."""
+    if not fresh:
+        return ""
+    lines = ["== SON DAKİKA HABERLERİ (izleyici) =="]
+    for h in fresh[:5]:
+        mark = "❗" if h.get("breaking") else "-"
+        lines.append(
+            f"{mark} [{h.get('source', '?')}] {h.get('title', '')[:120]} "
+            f"({h.get('age_min', 0):.0f} dk önce, skor {h.get('score', 0):+.2f}, "
+            f"etki {h.get('impact', 0):.2f})")
+    return "\n".join(lines) + "\n"
 
 
 def _candle_summary(closes: list[float], highs: list[float] | None,
@@ -89,15 +128,19 @@ def _candle_summary(closes: list[float], highs: list[float] | None,
 def _build_user_prompt(base: str, quote: str, tech: TechnicalSnapshot,
                        rule_action: str, recent_returns: list[float],
                        news_summary: str = "",
-                       candles: dict | None = None) -> str:
+                       candles: dict | None = None,
+                       market_ctx: dict | None = None,
+                       fresh_news: list[dict] | None = None) -> str:
     trend = "yukarı" if tech.ema_fast > tech.ema_slow else "aşağı"
     st_dir = "yukarı" if tech.supertrend_dir >= 0 else "aşağı"
     news_line = f"Haber duyarlılığı: {news_summary}\n" if news_summary else ""
+    news_line += _fresh_news_lines(fresh_news)
     candle_line = ""
     if candles and candles.get("closes"):
         candle_line = "== SON MUMLAR (fiyat-aksiyon) ==\n" + _candle_summary(
             candles.get("closes", []), candles.get("highs"),
             candles.get("lows"), candles.get("opens")) + "\n"
+    candle_line += _market_lines(market_ctx)
     return (
         f"Parite: {base}/{quote}\n"
         f"Fiyat: {tech.price:.6f}\n"
@@ -116,8 +159,9 @@ def _build_user_prompt(base: str, quote: str, tech: TechnicalSnapshot,
         f"Son getiriler (%): {[round(r, 2) for r in recent_returns[-8:]]}\n"
         f"{candle_line}"
         f"Kural tabanlı ön karar: {rule_action}\n\n"
-        "Teknik tabloyu, SON MUMLARIN yapısını ve haber duyarlılığını birlikte "
-        "değerlendir. Mum/fiyat-aksiyon göstergelerle çelişiyorsa belirt. "
+        "Teknik tabloyu, SON MUMLARIN yapısını, piyasa verisini ve haber "
+        "duyarlılığını (özellikle SON DAKİKA haberleri) birlikte değerlendir. "
+        "Mum/fiyat-aksiyon göstergelerle çelişiyorsa belirt. "
         "Nihai kararını JSON olarak ver."
     )
 
@@ -140,11 +184,15 @@ def complete(system_prompt: str, user_prompt: str,
     danışmanı (advise) hem piyasa analisti (marketdata.analyst) bunu kullanır.
     """
     provider = settings.llm_provider
+    # ZAMAN AŞIMI KRİTİK: SDK varsayılanı ~10 dk — asılı kalan bir LLM çağrısı
+    # bot tick döngüsünü kilitler. 20 sn + 1 yeniden deneme yeterli.
+    _TIMEOUT_S = 20.0
     try:
         if provider == "deepseek" and settings.deepseek_api_key:
             from openai import OpenAI
             client = OpenAI(api_key=settings.deepseek_api_key,
-                            base_url=settings.deepseek_base_url)
+                            base_url=settings.deepseek_base_url,
+                            timeout=_TIMEOUT_S, max_retries=1)
             resp = client.chat.completions.create(
                 model=settings.deepseek_model,
                 max_tokens=max_tokens,
@@ -160,7 +208,8 @@ def complete(system_prompt: str, user_prompt: str,
             # base_url boşsa gerçek Claude; doluysa Anthropic-uyumlu sağlayıcı
             # (örn. DeepSeek: https://api.deepseek.com/anthropic). Aynı SDK,
             # aynı kod -> ileride Claude'a geçiş yalnızca .env değişikliği.
-            kwargs = {"api_key": settings.anthropic_api_key}
+            kwargs = {"api_key": settings.anthropic_api_key,
+                      "timeout": _TIMEOUT_S, "max_retries": 1}
             if settings.anthropic_base_url:
                 kwargs["base_url"] = settings.anthropic_base_url
             client = anthropic.Anthropic(**kwargs)
@@ -174,7 +223,8 @@ def complete(system_prompt: str, user_prompt: str,
 
         if provider == "openai" and settings.openai_api_key:
             from openai import OpenAI
-            client = OpenAI(api_key=settings.openai_api_key)
+            client = OpenAI(api_key=settings.openai_api_key,
+                            timeout=_TIMEOUT_S, max_retries=1)
             resp = client.chat.completions.create(
                 model=settings.openai_model,
                 max_tokens=max_tokens,
@@ -193,15 +243,39 @@ def complete(system_prompt: str, user_prompt: str,
 
 def advise(base: str, quote: str, tech: TechnicalSnapshot, rule_action: str,
            recent_returns: list[float], news_summary: str = "",
-           candles: dict | None = None) -> dict | None:
+           candles: dict | None = None,
+           market_ctx: dict | None = None,
+           fresh_news: list[dict] | None = None) -> dict | None:
     """{'action','confidence','rationale'} veya None döner.
 
     candles: {'closes','highs','lows','opens'} — verilirse AI mum analizi yapar.
+    market_ctx: 24s istatistik + funding/OI + balina özeti (opsiyonel).
+    fresh_news: haber izleyicisinden taze başlıklar (opsiyonel).
     """
     user_prompt = _build_user_prompt(base, quote, tech, rule_action,
-                                     recent_returns, news_summary, candles)
-    text = complete(SYSTEM_PROMPT, user_prompt, max_tokens=200)
+                                     recent_returns, news_summary, candles,
+                                     market_ctx, fresh_news)
+    text = complete(SYSTEM_PROMPT, user_prompt, max_tokens=300)
     if text is None:
         log.warning("LLM danışman yanıtı yok, teknik karara düşülüyor")
         return None
-    return _parse(text)
+    return _validate(_parse(text))
+
+
+def _validate(advice: dict | None) -> dict | None:
+    """LLM çıktısını şemaya zorla: geçersiz aksiyon/values -> None (fail-safe).
+
+    Bozuk/eksik yanıt teknik karara düşer; asla yarım-doğru veri sızmaz.
+    """
+    if not isinstance(advice, dict):
+        return None
+    action = str(advice.get("action", "")).strip().upper()
+    if action not in ("BUY", "SELL", "HOLD"):
+        return None
+    try:
+        conf = float(advice.get("confidence", 0.5))
+    except (TypeError, ValueError):
+        conf = 0.5
+    conf = max(0.0, min(1.0, conf))
+    rationale = str(advice.get("rationale", "") or "").strip()[:300]
+    return {"action": action, "confidence": conf, "rationale": rationale}

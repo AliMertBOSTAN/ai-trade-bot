@@ -32,9 +32,19 @@ class LiveBroker:
     def __init__(self, portfolio: Portfolio, risk: RiskConfig):
         self.portfolio = portfolio
         self.risk = risk
-        if not settings.wallet_private_key:
-            raise RuntimeError("Live broker için WALLET_PRIVATE_KEY gerekli")
-        self.account = Account.from_key(settings.wallet_private_key)
+        # Anahtar önceliği: şifreli keystore → düz-metin env (geri-uyum).
+        pk: str | None = None
+        try:
+            from engine.security.keystore import load_private_key
+            pk = load_private_key()
+        except Exception:  # noqa: BLE001
+            pk = None
+        pk = pk or settings.wallet_private_key
+        if not pk:
+            raise RuntimeError(
+                "Live broker için anahtar gerekli: WALLET_KEYSTORE_PATH(+PASSWORD) "
+                "veya WALLET_PRIVATE_KEY")
+        self.account = Account.from_key(pk)
         log.info("Live broker cüzdanı: %s", self.account.address)
 
     # ---- yardımcılar ----
@@ -110,6 +120,20 @@ class LiveBroker:
             if gas_gwei > self.risk.max_gas_gwei:
                 raise RuntimeError(f"Gas {gas_gwei:.1f} gwei tavanı aştı")
 
+            # Bakiye ön kontrolü: yetersiz bakiyeyle estimate_gas'ın anlaşılmaz
+            # revert hatası yerine NET gerekçeyle reddet (para/gas boşa gitmez).
+            erc20 = w3.eth.contract(address=cs(token_in.address), abi=ERC20_ABI)
+            bal = erc20.functions.balanceOf(self.account.address).call()
+            if bal < amount_in:
+                have = bal / (10 ** token_in.decimals)
+                need = amount_in / (10 ** token_in.decimals)
+                raise RuntimeError(
+                    f"Yetersiz {token_in.symbol} bakiyesi: {have:.6f} < {need:.6f}")
+            native = w3.eth.get_balance(self.account.address)
+            if native <= 0:
+                raise RuntimeError(
+                    f"{chain.name} üzerinde gas için native bakiye yok")
+
             if dex.protocol == "uniswap-v2":
                 tx_hash, out = self._swap_v2(w3, dex, token_in, token_out, amount_in)
             else:
@@ -117,12 +141,22 @@ class LiveBroker:
 
             order.tx_hash = tx_hash
             order.status = "filled"
-            # gerçekleşen fiyatı çıktı miktarından türet
+            # Gerçekleşen fiyat DAİMA "token başına stable (USD)" olmalı:
+            #  BUY : in=stable, out=token -> fiyat = in/out
+            #  SELL: in=token, out=stable -> fiyat = out/in
+            # (Önceki kod SELL'de de in/out kullanıyordu -> muhasebe bozuluyordu.)
             out_human = out / (10 ** token_out.decimals)
             in_human = amount_in / (10 ** token_in.decimals)
-            order.filled_price = (in_human / out_human) if order.side == "SELL" else (in_human / out_human)
-            # toplam ücret = DEX swap fee + ağ gas ücreti (gas HER ZAMAN dahil)
-            swap_fee = in_human * 0.003
+            if out_human <= 0 or in_human <= 0:
+                raise RuntimeError("Geçersiz swap miktarı (0)")
+            order.filled_price = (out_human / in_human) if order.side == "SELL" \
+                else (in_human / out_human)
+            # toplam ücret = DEX swap fee + ağ gas ücreti (gas HER ZAMAN dahil).
+            # swap fee USD cinsinden: BUY'da girdi zaten stable; SELL'de token
+            # girdisini gerçekleşen fiyatla USD'ye çevir.
+            in_usd = in_human if order.side == "BUY" \
+                else in_human * order.filled_price
+            swap_fee = in_usd * 0.003
             gas_fee = gas.gas_cost_usd(order.chain_id, gas.GAS_UNITS_SWAP)
             order.fee_usd = swap_fee + gas_fee
             self.portfolio.apply_fill(order)

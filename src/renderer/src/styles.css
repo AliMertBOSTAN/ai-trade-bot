@@ -1593,3 +1593,911 @@ body {
   align-items: center;
   gap: 12px;
 }
+
+
+/* ---- sekme ipucu satırı (arayüzü anlaşılır kılar) ---- */
+.tab-hint {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(106, 166, 255, 0.06);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ---- strateji "nasıl çalışır" kutusu ---- */
+.hintbar {
+  margin: 6px 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(34, 211, 238, 0.06);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* ---- rejim rozetleri ---- */
+.regime-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.regime-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--text);
+}
+.regime-chip.trend_up {
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.08);
+}
+.regime-chip.trend_down {
+  border-color: rgba(251, 113, 133, 0.35);
+  background: rgba(251, 113, 133, 0.08);
+}
+.regime-chip.range {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.06);
+}
+
+/* ---- karar durumu etiketi ---- */
+.status-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.status-tag.pos {
+  color: var(--pos);
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.08);
+}
+.status-tag.neg {
+  color: var(--neg);
+  border-color: rgba(251, 113, 133, 0.4);
+  background: rgba(251, 113, 133, 0.08);
+}
+.status-tag.warn {
+  color: var(--live);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+
+/* ════════════════════════════════════════════════════════════════════
+   V2 GÖRSEL CİLA KATMANI — tüm sayfalar
+   Aşağıdaki kurallar dosya sonunda olduğu için üsttekileri geçersiz kılar.
+   ════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --bg: #060810;
+  --bg-glow1: rgba(88, 130, 255, 0.09);
+  --bg-glow2: rgba(45, 212, 191, 0.07);
+  --panel: linear-gradient(180deg, rgba(23, 29, 44, 0.92), rgba(16, 21, 33, 0.9));
+  --panel-solid: #141a28;
+  --panel2: #1b2233;
+  --border: rgba(148, 173, 224, 0.1);
+  --border-hover: rgba(106, 166, 255, 0.35);
+  --accent: #6aa6ff;
+  --accent2: #22d3ee;
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.35);
+  --shadow-glow: 0 0 24px rgba(106, 166, 255, 0.12);
+  --radius: 14px;
+}
+
+body {
+  background:
+    radial-gradient(1100px 600px at 12% -12%, var(--bg-glow1), transparent 60%),
+    radial-gradient(900px 550px at 92% -5%, var(--bg-glow2), transparent 55%),
+    radial-gradient(700px 700px at 50% 115%, rgba(106, 76, 255, 0.05), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* ---- üst bar: yapışkan cam efekti ---- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  margin: 0 -22px;
+  padding: 10px 22px 12px;
+  background: rgba(8, 11, 18, 0.82);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border-bottom: 1px solid var(--border);
+}
+.logo {
+  box-shadow: 0 0 18px rgba(106, 166, 255, 0.45);
+}
+.badge {
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+}
+.badge.live {
+  animation: livePulse 2.2s ease-in-out infinite;
+}
+@keyframes livePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(251, 191, 36, 0); }
+}
+.dot.on {
+  animation: connPulse 2.4s ease-in-out infinite;
+}
+@keyframes connPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
+  50% { box-shadow: 0 0 0 5px rgba(52, 211, 153, 0); }
+}
+
+/* ---- KPI şeridi ---- */
+.kpi {
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+.kpi::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(106, 166, 255, 0.35), transparent);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.kpi:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), var(--shadow-glow);
+}
+.kpi:hover::after {
+  opacity: 1;
+}
+.kpi-val {
+  font-size: 24px;
+  background: linear-gradient(180deg, #f2f6ff, #c9d6ef);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.kpi-val.pos {
+  background: linear-gradient(180deg, #7df0c4, #34d399);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.kpi-val.neg {
+  background: linear-gradient(180deg, #ffa3b5, #fb7185);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---- sekmeler ---- */
+.tabs {
+  gap: 7px;
+  margin: 8px 0 14px;
+}
+.tab {
+  border-radius: 999px;
+  padding: 8px 18px;
+  position: relative;
+}
+.tab:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.tab.active {
+  background: linear-gradient(135deg, var(--accent), #7c6cff);
+  color: #051228;
+  box-shadow: 0 4px 18px rgba(106, 146, 255, 0.35);
+}
+.tab-hint {
+  margin: 0 0 14px;
+  backdrop-filter: blur(4px);
+  animation: fadeSlide 0.3s ease;
+}
+
+/* ---- kartlar ---- */
+.card {
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(90deg, transparent 5%, rgba(255, 255, 255, 0.12), transparent 95%);
+  pointer-events: none;
+}
+.card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+.card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  letter-spacing: 0.2px;
+}
+.card h3::before {
+  content: '';
+  width: 4px;
+  height: 15px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 10px rgba(106, 166, 255, 0.5);
+  flex: none;
+}
+
+/* ---- içerik geçiş animasyonu ---- */
+.content > * {
+  animation: fadeSlide 0.32s ease;
+}
+@keyframes fadeSlide {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- tablolar ---- */
+.tbl {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.tbl thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(16, 21, 33, 0.96);
+  backdrop-filter: blur(6px);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  border-bottom: 1px solid rgba(106, 166, 255, 0.18);
+  padding: 9px 10px;
+}
+.tbl tbody tr {
+  transition: background 0.15s ease;
+}
+.tbl tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.015);
+}
+.tbl tbody tr:hover {
+  background: rgba(106, 166, 255, 0.06);
+}
+.tbl td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+}
+
+/* ---- butonlar & segment ---- */
+.btn,
+.btn-ghost,
+.run,
+.seg button,
+.xbtn {
+  transition: all 0.18s ease;
+}
+.btn:hover,
+.btn-ghost:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.btn.primary {
+  background: linear-gradient(135deg, var(--accent), #7c6cff);
+  border: none;
+  color: #051228;
+  box-shadow: 0 3px 14px rgba(106, 146, 255, 0.3);
+}
+.btn.primary:hover {
+  box-shadow: 0 6px 20px rgba(106, 146, 255, 0.45);
+}
+.run {
+  border-radius: 999px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+.run.running {
+  animation: livePulse 2.6s ease-in-out infinite;
+}
+.seg {
+  border-radius: 999px;
+  overflow: hidden;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(106, 166, 255, 0.6);
+  outline-offset: 2px;
+}
+
+/* ---- sinyal kartları ---- */
+.sigcard {
+  border-left: 3px solid rgba(148, 173, 224, 0.18);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.sigcard:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.sigcard:has(.tag.buy) {
+  border-left-color: rgba(52, 211, 153, 0.55);
+}
+.sigcard:has(.tag.sell) {
+  border-left-color: rgba(251, 113, 133, 0.55);
+}
+.sigcard.trade {
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.25), 0 6px 22px rgba(52, 211, 153, 0.08);
+}
+.tag {
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.tag.buy {
+  background: rgba(52, 211, 153, 0.16);
+  color: #4ade9d;
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.35);
+}
+.tag.sell {
+  background: rgba(251, 113, 133, 0.14);
+  color: #fb8ba0;
+  box-shadow: inset 0 0 0 1px rgba(251, 113, 133, 0.35);
+}
+.tag.hold {
+  background: rgba(148, 173, 224, 0.1);
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px rgba(148, 173, 224, 0.2);
+}
+.sig-bd-fill.tech {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 8px rgba(106, 166, 255, 0.4);
+}
+
+/* ---- strateji kartları ---- */
+.strat-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+.strat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-hover);
+}
+.strat-card.off {
+  opacity: 0.55;
+  filter: saturate(0.4);
+}
+.strat-fill {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.35);
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.strat-bar {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+/* ---- rejim & durum rozetleri (parlaklık) ---- */
+.regime-chip {
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease;
+}
+.regime-chip:hover {
+  transform: translateY(-1px);
+}
+
+/* ---- grafik kutuları ---- */
+.chartbox {
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(106, 166, 255, 0.04), transparent 40%),
+    rgba(0, 0, 0, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(148, 173, 224, 0.08);
+  padding: 6px;
+}
+
+/* ---- log kutusu ---- */
+.logbox {
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(148, 173, 224, 0.08);
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+.logline {
+  border-left: 2px solid transparent;
+  padding-left: 8px;
+  transition: background 0.15s ease;
+}
+.logline:hover {
+  background: rgba(106, 166, 255, 0.05);
+  border-left-color: var(--accent);
+}
+
+/* ---- modal ---- */
+.modal-overlay {
+  background: rgba(4, 6, 12, 0.66);
+  backdrop-filter: blur(8px);
+  animation: fadeSlide 0.2s ease;
+}
+.modal {
+  box-shadow: var(--shadow-md), 0 0 60px rgba(106, 166, 255, 0.08);
+  border: 1px solid rgba(148, 173, 224, 0.16);
+  animation: modalIn 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ---- haber & analist & piyasa kartları ---- */
+.news-item,
+.mcard,
+.acard,
+.whale-card,
+.arb {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.news-item:hover,
+.mcard:hover,
+.acard:hover,
+.whale-card:hover,
+.arb:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-hover);
+}
+
+/* ---- pozitif/negatif metin parlaması ---- */
+.pos { text-shadow: 0 0 14px rgba(52, 211, 153, 0.2); }
+.neg { text-shadow: 0 0 14px rgba(251, 113, 133, 0.18); }
+
+/* ---- gaz listesi satırları ---- */
+.gasrow {
+  border-radius: 8px;
+  padding: 6px 8px;
+  transition: background 0.15s ease;
+}
+.gasrow:hover {
+  background: rgba(106, 166, 255, 0.05);
+}
+
+/* ---- zincir çipleri ---- */
+.chain-chip,
+.chain-row {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.chain-chip:hover,
+.chain-row:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-hover);
+}
+
+/* ---- kaydırma alanı yumuşak maske ---- */
+.scroll {
+  -webkit-mask-image: linear-gradient(180deg, #000 92%, transparent);
+  mask-image: linear-gradient(180deg, #000 92%, transparent);
+}
+
+/* ---- dar ekran uyumu ---- */
+@media (max-width: 1100px) {
+  .kpis { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 760px) {
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .grid { grid-template-columns: 1fr; }
+}
+
+
+/* ════════════════════════════════════════════════════════════════════
+   V3 DÜZELTMELER + SÜRÜKLENEBİLİR PANEL IZGARASI
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ---- strateji kartı: ağırlık satırı taşma düzeltmesi ---- */
+.strat-card {
+  min-width: 0; /* grid çocuğu içeriğe göre taşmasın */
+}
+.strat-weight {
+  flex-wrap: wrap;
+  row-gap: 6px;
+  min-width: 0;
+}
+.weight-ctl {
+  flex: 1 1 130px;
+  min-width: 0;
+  justify-content: flex-end;
+}
+.weight-ctl input[type='range'] {
+  flex: 1 1 60px;
+  min-width: 40px;
+  max-width: 120px;
+  width: auto;
+}
+.weight-ctl b.mono {
+  flex: none;
+  min-width: 22px;
+  text-align: right;
+}
+
+/* ---- zincir paneli: hepsini aç/kapat butonları ---- */
+.chain-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.chain-actions .btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 999px;
+  background: rgba(106, 166, 255, 0.08);
+  border: 1px solid rgba(106, 166, 255, 0.22);
+  color: var(--accent);
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.16s ease;
+}
+.chain-actions .btn:hover:not(:disabled) {
+  background: rgba(106, 166, 255, 0.16);
+  border-color: rgba(106, 166, 255, 0.45);
+  transform: translateY(-1px);
+}
+.chain-actions .btn:last-child {
+  background: rgba(251, 113, 133, 0.06);
+  border-color: rgba(251, 113, 133, 0.2);
+  color: var(--neg);
+}
+.chain-actions .btn:last-child:hover:not(:disabled) {
+  background: rgba(251, 113, 133, 0.12);
+  border-color: rgba(251, 113, 133, 0.4);
+}
+.chain-actions .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- ana sayfa: sürüklenebilir + boyutlanabilir panel ızgarası ---- */
+.dashgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.dash-item {
+  position: relative;
+  min-width: 0;
+  min-height: 140px;
+  border-radius: var(--radius);
+  resize: vertical;      /* alt kenardan yükseklik ayarı */
+  overflow: hidden;
+  transition: opacity 0.18s ease, outline-color 0.18s ease;
+}
+.dash-item.span2 {
+  grid-column: span 2;
+}
+.dash-item > .card {
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+}
+.dash-item.dragging {
+  opacity: 0.35;
+}
+.dash-item.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius);
+}
+/* araç şeridi: üst-orta, hover'da görünür */
+.dash-tools {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(10, 14, 22, 0.85);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.dash-item:hover .dash-tools {
+  opacity: 1;
+}
+.dash-handle {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 6px;
+  user-select: none;
+}
+.dash-handle:hover {
+  color: var(--text);
+  background: rgba(106, 166, 255, 0.12);
+}
+.dash-handle:active {
+  cursor: grabbing;
+}
+.dash-size {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+  line-height: 1;
+}
+.dash-size:hover {
+  color: var(--text);
+  background: rgba(106, 166, 255, 0.12);
+}
+.dash-foot {
+  margin-top: 12px;
+  text-align: center;
+}
+.linklike {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.linklike:hover {
+  color: var(--accent2);
+}
+@media (max-width: 760px) {
+  .dashgrid { grid-template-columns: 1fr; }
+  .dash-item.span2 { grid-column: span 1; }
+}
+
+
+/* ---- performans paneli ---- */
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.perf-metric {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 11px;
+  min-width: 0;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.perf-metric:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+.perf-label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.perf-value {
+  font-size: 17px;
+  font-weight: 800;
+  margin-top: 4px;
+  letter-spacing: -0.3px;
+}
+@media (max-width: 900px) {
+  .perf-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+
+/* ---- genel strateji profili kartları ---- */
+.preset-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.preset-card {
+  text-align: left;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  min-width: 0;
+}
+.preset-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+.preset-card.active {
+  border-color: rgba(106, 166, 255, 0.55);
+  background: rgba(106, 166, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(106, 166, 255, 0.35), var(--shadow-glow);
+}
+.preset-card:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.preset-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  font-size: 13.5px;
+}
+.preset-icon {
+  font-size: 16px;
+}
+.preset-check {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--accent);
+  background: rgba(106, 166, 255, 0.12);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* ---- pozisyon giriş eşiği ---- */
+.thr-row {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.thr-label {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.thr-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+  height: 22px;
+}
+
+/* ---- paper sıfırlama modalı ---- */
+.reset-quick {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 4px;
+  flex-wrap: wrap;
+}
+.reset-quick .btn {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.reset-cash-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 4px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.reset-cash-row input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+}
+@media (max-width: 900px) {
+  .preset-row { grid-template-columns: 1fr; }
+}
+
+
+/* ---- canlıya geçiş ön kontrol modalı ---- */
+.modal.preflight {
+  max-width: 560px;
+  width: 92vw;
+}
+.pf-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+.pf-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12.5px;
+}
+.pf-check.ok {
+  border-color: rgba(52, 211, 153, 0.25);
+}
+.pf-check.fail {
+  border-color: rgba(251, 113, 133, 0.35);
+  background: rgba(251, 113, 133, 0.05);
+}
+.pf-ico {
+  font-size: 13px;
+}
+
+
+/* ---- AI strateji danışmanı ---- */
+.advice-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.advice-empty .muted {
+  flex: 1 1 300px;
+  line-height: 1.55;
+}
+.advice-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.advice-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  line-height: 1.5;
+}
+.advice-changed {
+  background: rgba(106, 166, 255, 0.05);
+}
+.advice-changed td:first-child {
+  border-left: 2px solid var(--accent);
+}
+.advice-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.advice-actions {
+  display: flex;
+  gap: 8px;
+}

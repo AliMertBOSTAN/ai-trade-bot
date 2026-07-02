@@ -25,9 +25,9 @@ export default function PositionsTable({
             <button
               className="btn-ghost small"
               onClick={onReset}
-              title="Paper portföyü sıfırla ve $100 değerinde ETH ile yeniden başlat"
+              title="Paper portföyü sıfırla — tutarı ve başlangıç türünü sen seç"
             >
-              ↺ Paper'ı sıfırla ($100 ETH)
+              ↺ Paper'ı sıfırla…
             </button>
           )}
         </div>

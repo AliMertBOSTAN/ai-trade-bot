@@ -34,8 +34,10 @@ def strategy_fits_regime(strategy_name: str, regime: Regime) -> bool:
     - mean_reversion: range rejiminde
     - hybrid: her rejimde (zaten ADX'i içsel kullanır)
     """
-    if strategy_name in ("trend", "breakout"):
+    if strategy_name in ("trend", "breakout", "momentum"):
         return regime in ("trend_up", "trend_down")
+    if strategy_name == "pullback":
+        return regime == "trend_up"     # long-only dip alımı: sadece yükseliş yapısında
     if strategy_name == "mean_reversion":
         return regime == "range"
     return True

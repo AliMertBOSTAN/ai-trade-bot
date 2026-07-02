@@ -12,6 +12,7 @@ import time
 from engine.config.settings import settings
 from engine.indicators.technical import compute_snapshot
 from engine.marketdata import news as market_news
+from engine.marketdata.news_watcher import watcher as news_watcher
 from engine.models import TechnicalSnapshot, TradeSignal
 from engine.signals import llm
 from engine.ml.model import MLSignal, blend_confidence
@@ -22,6 +23,7 @@ W_NEWS = 0.30
 
 _LLM_MIN_CONF = 0.55
 _LLM_COOLDOWN_S = 900
+_LLM_BREAKING_GAP_S = 180   # son-dakika haberde cooldown kırılır ama min ara
 _llm_last: dict[str, tuple[str, float]] = {}
 
 # Opsiyonel ML modeli (egitilmediyse None -> davranis degismez)
@@ -50,18 +52,66 @@ def ml_active() -> bool:
     return _ml_model is not None
 
 
-def _should_consult_llm(base: str, action: str, rule_conf: float) -> bool:
-    """LLM cagrisi gercekten degerli mi? (token israfini onler.)"""
+def _should_consult_llm(base: str, action: str, rule_conf: float,
+                        breaking: bool = False) -> bool:
+    """LLM cagrisi gercekten degerli mi? (token israfini onler.)
+
+    breaking=True: taze SON-DAKIKA haber var — normal cooldown/esik kirilir,
+    yine de ayni sembole en fazla _LLM_BREAKING_GAP_S'de bir danisilir.
+    """
     if settings.llm_provider == "none" or action == "HOLD":
-        return False
-    if rule_conf < _LLM_MIN_CONF:
         return False
     prev = _llm_last.get(base)
     now = time.time()
+    if breaking:
+        if prev is None or (now - prev[1]) >= _LLM_BREAKING_GAP_S:
+            _llm_last[base] = (action, now)
+            return True
+        return False
+    if rule_conf < _LLM_MIN_CONF:
+        return False
     if prev and prev[0] == action and (now - prev[1]) < _LLM_COOLDOWN_S:
         return False
     _llm_last[base] = (action, now)
     return True
+
+
+def _market_context(binance_symbol: str | None) -> dict | None:
+    """LLM'e verilecek piyasa baglami (yalnizca LLM'e danisilirken cekilir).
+
+    Her parca bagimsiz fail-safe'tir: veri gelmezse o satir atlanir.
+    """
+    if not binance_symbol:
+        return None
+    ctx: dict = {}
+    try:
+        from engine.marketdata import binance as _bn
+        t = _bn.ticker_24h(binance_symbol)
+        ctx.update({"change_pct_24h": t["change_pct_24h"],
+                    "high_24h": t["high_24h"], "low_24h": t["low_24h"],
+                    "volume_quote_24h": t["volume_quote_24h"]})
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from engine.marketdata import derivatives as _dv
+        d = _dv.summary(binance_symbol)
+        if d.get("ok"):
+            sq = d.get("squeeze") or {}
+            ctx.update({"funding_pct": d.get("funding_pct"),
+                        "oi_change_pct": d.get("oi_change_pct"),
+                        "ls_ratio": d.get("ls_ratio"),
+                        "squeeze_dir": sq.get("direction"),
+                        "squeeze_score": sq.get("score")})
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from engine.marketdata import whales as _wh
+        w = _wh.summary(binance_symbol)
+        ctx.update({"whale_label": w.get("label"),
+                    "whale_score": (w.get("pressure") or {}).get("score")})
+    except Exception:  # noqa: BLE001
+        pass
+    return ctx or None
 
 
 def _clamp(x: float, lo: float = -1.0, hi: float = 1.0) -> float:
@@ -216,7 +266,8 @@ def generate_signal(chain_id: int, base: str, quote: str,
                     htf_closes: list[float] | None = None,
                     htf_highs: list[float] | None = None,
                     htf_lows: list[float] | None = None,
-                    htf_volumes: list[float] | None = None) -> TradeSignal:
+                    htf_volumes: list[float] | None = None,
+                    binance_symbol: str | None = None) -> TradeSignal:
     tech = compute_snapshot(closes, highs, lows, volumes)
     rule_action, rule_conf = _rule_decision(tech)
     action = rule_action
@@ -228,14 +279,34 @@ def generate_signal(chain_id: int, base: str, quote: str,
                 "market": True, "headlines": []}
     news_score = float(news["score"])
 
+    # Taze haber katmani (izleyici): son dakikalarin recency-agirlikli skoru.
+    # Izleyici calismiyorsa/bossa etkisizdir (count=0) — davranis degismez.
+    try:
+        fresh = news_watcher.fresh_bias(base)
+    except Exception:  # noqa: BLE001
+        fresh = {"score": 0.0, "count": 0, "breaking": False,
+                 "headlines": [], "market": True}
+    if fresh["count"] > 0:
+        # Taze haber, saatlik RSS ortalamasindan daha agir basar.
+        news_score = _clamp(0.45 * news_score + 0.55 * float(fresh["score"]))
+
     news_summary = (f"{news['label']} ({news_score:+.2f})"
                     + (f"; ornek: {news['headlines'][0]}" if news["headlines"] else ""))
-    if _should_consult_llm(base, rule_action, rule_conf):
+    if fresh["breaking"]:
+        news_summary += " | SON DAKIKA haber akista!"
+    if _should_consult_llm(base, rule_action, rule_conf,
+                           breaking=bool(fresh["breaking"])):
         _candles = {"closes": closes, "highs": highs or closes,
                     "lows": lows or closes,
                     "opens": ([closes[0]] + closes[:-1]) if closes else []}
+        try:
+            fresh_items = news_watcher.fresh_for(base)
+        except Exception:  # noqa: BLE001
+            fresh_items = []
         advice = llm.advise(base, quote, tech, rule_action, _returns(closes),
-                            news_summary, candles=_candles)
+                            news_summary, candles=_candles,
+                            market_ctx=_market_context(binance_symbol),
+                            fresh_news=fresh_items)
     else:
         advice = None
     llm_action = advice.get("action") if advice else None
@@ -254,7 +325,7 @@ def generate_signal(chain_id: int, base: str, quote: str,
         news_align = 0.0
     news_component = (1.0 + news_align) / 2.0
 
-    if news["count"] > 0 and action != "HOLD":
+    if (news["count"] > 0 or fresh["count"] > 0) and action != "HOLD":
         confidence = W_TECHNICAL * tech_component + W_NEWS * news_component
         weights = {"technical": W_TECHNICAL, "news": W_NEWS}
     else:
@@ -269,6 +340,21 @@ def generate_signal(chain_id: int, base: str, quote: str,
         else:
             confidence = min(confidence, 0.50)
             llm_note = f"celiski -> {llm_action} (kisildi)"
+
+    # --- Son-dakika haber ayari: karara TERS guclu taze haber guveni sert
+    # kisar (esik altina iter); ayni yondeki haber kucuk destek verir. ---
+    fresh_note = "yok"
+    if action in ("BUY", "SELL") and fresh["count"] > 0:
+        aligned = float(fresh["score"]) if action == "BUY" else -float(fresh["score"])
+        if fresh["breaking"] and aligned <= -0.15:
+            confidence = min(confidence, 0.45)
+            fresh_note = "son-dakika haber karara ters (kisildi)"
+        elif fresh["breaking"] and aligned >= 0.15:
+            confidence = min(1.0, confidence + 0.05)
+            fresh_note = "son-dakika haber destekliyor (+5%)"
+        else:
+            fresh_note = (f"taze haber skoru {float(fresh['score']):+.2f} "
+                          f"({fresh['count']} baslik)")
 
     confidence = _clamp(confidence, 0.0, 1.0)
 
@@ -305,7 +391,9 @@ def generate_signal(chain_id: int, base: str, quote: str,
     confidence = _clamp(confidence, 0.0, 1.0)
 
     news_state = (f"haber {news['label']} ({news_score:+.2f}, {news['count']} baslik"
-                  + (" - piyasa geneli" if news["market"] else "") + ")")
+                  + (" - piyasa geneli" if news["market"] else "")
+                  + (f", {fresh['count']} taze" if fresh["count"] else "")
+                  + (" - SON DAKIKA" if fresh["breaking"] else "") + ")")
     rationale = f"{tech_state} | {news_state}"
     if llm_used and advice.get("rationale"):
         rationale = f"{advice['rationale']} || {rationale}"
@@ -320,6 +408,11 @@ def generate_signal(chain_id: int, base: str, quote: str,
         "newsMarket": news["market"],
         "newsHeadlines": news["headlines"],
         "weights": weights,
+        "freshNewsScore": round(float(fresh["score"]), 3),
+        "freshNewsCount": int(fresh["count"]),
+        "freshBreaking": bool(fresh["breaking"]),
+        "freshHeadlines": list(fresh.get("headlines") or []),
+        "freshNote": fresh_note,
         "llmUsed": llm_used,
         "llmAction": llm_action,
         "llmNote": llm_note,

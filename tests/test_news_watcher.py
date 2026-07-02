@@ -85,12 +85,11 @@ def test_fresh_bias_negatif_breaking_ve_guard(watcher, monkeypatch):
     assert bias["breaking"] is True
 
     g = watcher.guard("ETH", now=now + 60)
-    assert g is not None and "hacked" in g.lower() or g  # gerekçe metni döner
+    assert g is not None and "negatif son-dakika" in g
     # 15 dk fren penceresi dışında serbest
     assert watcher.guard("ETH", now=now + 16 * 60) is None
-    # Satış tarafı hiç engellenmez (guard yalnızca BUY için kullanılır) —
-    # alakasız sembol de genel (tokens'sız) haberden etkilenmez:
-    assert watcher.guard("LINK", now=now + 60) is not None or True
+    # Haber ETH'ye eşlendi -> alakasız sembole fren uygulanmaz
+    assert watcher.guard("LINK", now=now + 60) is None
 
 
 def test_fresh_bias_pozitif_ve_pencere_disi(watcher, monkeypatch):
@@ -193,9 +192,11 @@ def test_generate_signal_izleyici_bos_davranis_degismez(monkeypatch):
 
 
 def test_breaking_llm_cooldown_kirilir(monkeypatch):
+    from types import SimpleNamespace
     from engine.signals import engine as sig_engine
-    monkeypatch.setattr(sig_engine.settings, "llm_provider", "deepseek",
-                        raising=False)
+    # settings frozen dataclass -> modül seviyesinde sahte nesneyle değiştir.
+    monkeypatch.setattr(sig_engine, "settings",
+                        SimpleNamespace(llm_provider="deepseek"))
     sig_engine._llm_last.clear()
     try:
         # Normal yol: düşük güven -> LLM'e gidilmez.

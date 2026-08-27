@@ -20,6 +20,7 @@ from engine.arbitrage.scanner import scan_arbitrage
 from engine.config.settings import RiskConfig, settings
 from engine.dex.oracle import fetch_all_prices
 from engine.marketdata import binance
+from engine.marketdata.candle_agg import INTERVAL_MS, CandleAggregator
 from engine.models import PriceQuote, TradeOrder, TradeSignal, now_ms
 from engine.risk.manager import RiskManager
 from engine.signals.engine import generate_signal
@@ -69,12 +70,41 @@ STRATEGY_PRESETS: dict[str, dict] = {
 
 EventCb = Callable[[dict], None]
 
+# Kullanıcı ayarlı risk limitlerinin izin aralıkları (alan -> (min, max)).
+# Live'a etki eden değerler: aralık dışı istekler kırpılır, asla ham geçmez.
+_RISK_LIMIT_BOUNDS: dict[str, tuple[float, float]] = {
+    "max_position_usd": (10.0, 1_000_000.0),
+    "max_open_positions": (1, 20),
+    "max_daily_loss_usd": (10.0, 100_000.0),
+    "max_gas_gwei": (5.0, 500.0),
+    "slippage_bps": (10, 1_000),
+    "daily_spend_limit_usd": (0.0, 10_000_000.0),  # 0 = limitsiz
+}
+
+def _min_trade_usd() -> float:
+    """Asgari işlem nosyoneli (USD). Küçük sermaye için env ile düşürülebilir.
+
+    Base gibi ucuz zincirlerde 5$ bile ekonomiktir (tur gas ~0,005$); Ethereum
+    L1'de 10$ altı anlamsızdır. 1..1000$ aralığına kırpılır.
+    """
+    import os as _os
+    try:
+        v = float(_os.getenv("MIN_TRADE_USD", "10"))
+    except (TypeError, ValueError):
+        v = 10.0
+    return max(1.0, min(1000.0, v))
+
+
 # Sinyaller için minimum geçmiş (mum) sayısı (göstergeler için).
 WARMUP = 31
 
 # Sinyal izleme listesi: RPC/DEX fiyatı OLMASA bile (paper mod) Binance
 # (anahtarsız) klines/ticker ile sinyal üretilir. (chain_id, base, quote, binance)
 SIGNAL_WATCHLIST: list[tuple[int, str, str, str]] = [
+    # Base (8453) — canlı işlem için birincil ağ: ucuz gas, derin Uniswap v3
+    # havuzları, yerel USDC. Live modda gerçek DEX fiyatı buradan gelir.
+    (8453, "WETH", "USDC", "ETHUSDT"),
+    (8453, "cbBTC", "USDC", "BTCUSDT"),
     (1, "WETH", "USDC", "ETHUSDT"),
     (1, "WBTC", "USDC", "BTCUSDT"),
     (56, "WBNB", "USDT", "BNBUSDT"),
@@ -158,6 +188,19 @@ class TradingBot:
         # İşlem başına risk (sermaye oranı) — ATR boyutlama TAVANI (0 = kapalı).
         # Yüksek oynaklıkta pozisyonu otomatik küçültür (volatilite hedefleme).
         self._risk_pct = float(_os.getenv("RISK_PCT_PER_TRADE", "0.01"))
+        # Sinyal hizalaması: sinyaller sabit mum KAPANIŞLARIYLA üretilir
+        # (backtest ile birebir semantik). SIGNAL_ALIGN=ticks eski davranış
+        # (tick-karışımı seri, her tick yeni sinyal) için kaçış kapısıdır.
+        self._signal_align = _os.getenv("SIGNAL_ALIGN", "candles").strip().lower()
+        self._sig_interval = _os.getenv("SIGNAL_INTERVAL", "1h").strip()
+        self._sig_interval_ms = INTERVAL_MS.get(self._sig_interval, 3_600_000)
+        self._aggs: dict[str, CandleAggregator] = {}
+        self._sig_cache: dict[str, TradeSignal] = {}
+        # Otomatik yeniden-optimizasyon: AUTO_TUNE_INTERVAL_H saatte bir
+        # watchlist sembolleri walk-forward ile ayarlanır (0 = kapalı).
+        self._auto_tune_h = float(_os.getenv("AUTO_TUNE_INTERVAL_H", "0"))
+        self._last_tune_ts = time.time()
+        self._tuning_active = False
         # Kullanıcı risk ayarları (giriş eşiği + profil) — data/risk.json'dan.
         self._preset = "custom"
         self._load_risk_config()
@@ -243,7 +286,27 @@ class TradingBot:
         self._persist_state()
         return self.state()
 
-    def set_mode(self, mode: str) -> dict:
+    def set_mode(self, mode: str, force: bool = False) -> dict:
+        """Mod değiştir. LIVE'a geçiş ÖN-UÇUŞ kontrolünden geçmeden yapılmaz.
+
+        `force=True` (veya LIVE_FORCE=1) kontrolü atlar — yalnızca ne yaptığını
+        bilerek kullanın. Paper'a dönüş her zaman serbesttir.
+        """
+        import os as _os
+        if mode == "live" and not (force or _os.getenv("LIVE_FORCE") == "1"):
+            try:
+                pre = self.live_preflight()
+            except Exception as e:  # noqa: BLE001
+                self.status = "error"
+                self.message = f"Ön-uçuş kontrolü çalıştırılamadı: {e}"
+                return self.state()
+            if not pre.get("ready"):
+                failed = [k for k, v in (pre.get("checks") or {}).items() if not v]
+                self.message = ("Live'a geçilmedi — ön-uçuş kontrolü başarısız: "
+                                + ", ".join(failed))
+                self._emit({"type": "log", "level": "error",
+                            "message": self.message})
+                return {**self.state(), "preflight": pre}
         try:
             self.executor.set_mode(mode)
             self.message = ""
@@ -316,15 +379,46 @@ class TradingBot:
                 continue
             self._history[hist_key].append(price_now)
 
-            closes = list(self._history[hist_key])
-            if len(closes) < WARMUP:
-                continue
+            highs = lows = volumes = None
+            htf = None
+            use_candles = self._signal_align == "candles"
+            if use_candles:
+                # Mum hizalaması: sinyaller yalnız KAPANMIŞ mumlarla üretilir
+                # (backtest ile birebir). Girişler mum kapanışında karar bulur;
+                # stop/trailing çıkışları aşağıda HER tick denetlenmeye devam eder.
+                agg = self._aggs.get(hist_key)
+                if agg is None:
+                    agg = self._aggs[hist_key] = CandleAggregator(
+                        self._sig_interval_ms)
+                    self._seed_agg(agg, _WL_BINANCE.get((cid, base)))
+                new_bar = agg.update(price_now, now_ms())
+                closes = agg.closes()
+                if len(closes) < WARMUP:
+                    continue
+                cached = self._sig_cache.get(hist_key)
+                if not new_bar and cached is not None:
+                    # Mum kapanmadı: karar verisi değişmedi — sinyali yeniden
+                    # üretme (LLM/DB gürültüsü yok), UI için önbelleği koru.
+                    signals.append(cached)
+                    continue
+                highs, lows, volumes = agg.highs(), agg.lows(), agg.volumes()
+                htf = agg.htf(4)
+            else:
+                closes = list(self._history[hist_key])
+                if len(closes) < WARMUP:
+                    continue
             quote = next((q.quote for q in prices if q.chain_id == cid and q.base == base),
                          _WL_QUOTE.get((cid, base), "USD"))
             # binance_symbol: LLM'e danisilirken 24s istatistik + funding +
             # balina baglami bu sembol uzerinden cekilir (varsa).
             sig = generate_signal(cid, base, quote, closes,
+                                  highs=highs, lows=lows, volumes=volumes,
+                                  htf_closes=htf[0] if htf else None,
+                                  htf_highs=htf[1] if htf else None,
+                                  htf_lows=htf[2] if htf else None,
+                                  htf_volumes=htf[3] if htf else None,
                                   binance_symbol=_WL_BINANCE.get((cid, base)))
+            self._sig_cache[hist_key] = sig
             signals.append(sig)
             store.save_signal(sig)
             self._emit({"type": "signal", "signal": sig.to_dict()})
@@ -344,12 +438,22 @@ class TradingBot:
                 buy_guard = _nw.guard(base)
             except Exception:  # noqa: BLE001
                 buy_guard = None
+            # Veri takvimi freni: yuksek-etkili makro veri (CPI/NFP/FOMC)
+            # penceresinde yeni ALIM acilmaz. Cikislar/satislar etkilenmez.
+            if buy_guard is None:
+                try:
+                    from engine.marketdata.calendar import calendar as _cal
+                    buy_guard = _cal.guard(base)
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 def _factory(_name, cash, _tech=tech, _closes=closes,
-                             _cid=cid, _base=base, _quote=quote):
+                             _cid=cid, _base=base, _quote=quote,
+                             _h=highs, _l=lows, _v=volumes):
                     return StrategyContext(
                         base=_base, quote=_quote, chain_id=_cid, closes=_closes,
-                        highs=_closes, lows=_closes, volumes=[0.0] * len(_closes),
+                        highs=_h or _closes, lows=_l or _closes,
+                        volumes=_v or [0.0] * len(_closes),
                         tech=_tech, price=_closes[-1], cash_allocated=cash,
                         news_score=float((sig.breakdown or {}).get("newsScore", 0.0)))
 
@@ -372,7 +476,7 @@ class TradingBot:
                     elif trade_sig.confidence < self.risk.min_confidence:
                         status = "eşik altı"
                     elif ss.action == "BUY" and buy_guard:
-                        status = f"haber freni: {buy_guard}"
+                        status = f"giriş freni: {buy_guard}"
                     elif (ss.action == "BUY"
                           and not self._cooldown.ready(f"{cid}:{base}")):
                         status = "cooldown"
@@ -413,10 +517,63 @@ class TradingBot:
             store.save_arbitrage(o)
             self._emit({"type": "arbitrage", "opp": o.to_dict()})
 
+        # --- otomatik yeniden-optimizasyon (etkinse, arka planda) ---
+        self._maybe_auto_tune()
+
         # --- kayıt + event ---
         self.last_tick = now_ms()
         store.save_equity(self.last_tick, self.portfolio.equity_usd())
         self._emit({"type": "tick", "state": self.state()})
+
+    def _seed_agg(self, agg: CandleAggregator, binance_symbol: str | None) -> None:
+        """Mum toplayıcısını Binance klines ile ön-doldur (oluşan mum hariç)."""
+        if binance_symbol is None:
+            return
+        try:
+            klines = binance.klines(binance_symbol,
+                                    interval=self._sig_interval, limit=200)
+            agg.seed(klines)
+        except Exception as e:  # noqa: BLE001
+            log.debug("mum tohumu başarısız (%s): %s", binance_symbol, e)
+
+    def _maybe_auto_tune(self) -> None:
+        """Periyodik yeniden-optimizasyon (AUTO_TUNE_INTERVAL_H > 0 iken).
+
+        Watchlist sembolleri için gerçek klines çekilir, ATR (canlı-eşdeğer)
+        ızgarası walk-forward ile taranır ve tuned_params.json güncellenir.
+        Ayrı daemon thread'de koşar; ana tick döngüsünü bloklamaz. Bitince
+        _maybe_trade'deki sembol-bazlı eşik kapısı yeni değerleri kullanır.
+        """
+        if self._auto_tune_h <= 0 or self._tuning_active:
+            return
+        if time.time() - self._last_tune_ts < self._auto_tune_h * 3600.0:
+            return
+        self._tuning_active = True
+
+        def _work() -> None:
+            try:
+                from engine.tuning.optimizer import load_all, optimize_symbol_atr
+                for (_cid, base), bsym in _WL_BINANCE.items():
+                    try:
+                        candles = binance.klines(bsym,
+                                                 interval=self._sig_interval,
+                                                 limit=1000)
+                        if len(candles) >= 200:
+                            optimize_symbol_atr(
+                                candles, base, "USD",
+                                settings.starting_cash_usd, self.risk,
+                                interval=self._sig_interval)
+                    except Exception as e:  # noqa: BLE001
+                        log.debug("auto-tune %s hatası: %s", base, e)
+                self._tuned = load_all()
+                self._emit({"type": "log", "level": "info",
+                            "message": "Otomatik yeniden-optimizasyon tamamlandı "
+                                       f"({len(self._tuned)} sembol)"})
+            finally:
+                self._last_tune_ts = time.time()
+                self._tuning_active = False
+
+        threading.Thread(target=_work, daemon=True, name="auto-tune").start()
 
     def _seed_history(self, hist_key: str, binance_symbol: str | None) -> None:
         """Geçmiş kısa ise Binance klines (anahtarsız) ile ön-doldur.
@@ -528,11 +685,29 @@ class TradingBot:
                                  sig.technical.price or 0.0, atr)
             if cap > 0:
                 base_size = min(base_size, cap)
-            if base_size < 10:
+            # Asgari islem buyuklugu: MIN_TRADE_USD (varsayilan 10$). Kucuk
+            # sermayede (or. 100$) 10$ tavani islemlerin cogunu eler; Base'de
+            # gas ~0.003$ oldugu icin 5$ bile ekonomiktir. Gas/nosyonel orani
+            # ayrica LiveBroker'da denetlenir.
+            if base_size < _min_trade_usd():
                 self._emit({"type": "log", "level": "info",
                             "message": (f"{sig.base}: oynaklık yüksek — ATR boyutu "
-                                        f"(${base_size:.0f}) çok küçük, alım atlandı")})
+                                        f"(${base_size:.2f}) asgari işlem "
+                                        f"(${_min_trade_usd():.2f}) altında, alım atlandı")})
                 return False
+
+        # Veri takvimi de-risk: ORTA etkili bir veri penceresindeysek (bloklama
+        # eşiğinin altında) yeni alım boyutu küçültülür. Satışa dokunmaz.
+        if sig.action == "BUY":
+            try:
+                from engine.marketdata.calendar import calendar as _cal
+                factor, note = _cal.size_factor(sig.base)
+                if factor < 1.0:
+                    base_size *= factor
+                    self._emit({"type": "log", "level": "info",
+                                "message": f"{sig.base}: {note} (×{factor:.2f})"})
+            except Exception:  # noqa: BLE001
+                pass
 
         # Akıllı yürütme: etkin maliyeti en düşük DEX + drawdown'a göre boyut.
         plan = smart_exec.plan_execution(
@@ -911,6 +1086,11 @@ class TradingBot:
             mc = float(cfg.get("min_confidence", self.risk.min_confidence))
             self._apply_min_confidence(mc)
             self._preset = str(cfg.get("preset", "custom"))
+            limits = cfg.get("limits")
+            if isinstance(limits, dict):
+                # Kayitli live/paper limitleri geri yukle (kirpma icinde yapilir).
+                self.set_risk_limits(persist=False, **{
+                    k: limits.get(k) for k in _RISK_LIMIT_BOUNDS})
         except Exception as e:  # noqa: BLE001
             log.warning("risk config yuklenemedi: %s", e)
 
@@ -922,9 +1102,80 @@ class TradingBot:
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump({"min_confidence": self.risk.min_confidence,
-                           "preset": self._preset}, f, indent=2)
+                           "preset": self._preset,
+                           "limits": {
+                               "max_position_usd": self.risk.max_position_usd,
+                               "max_open_positions": self.risk.max_open_positions,
+                               "max_daily_loss_usd": self.risk.max_daily_loss_usd,
+                               "max_gas_gwei": self.risk.max_gas_gwei,
+                               "slippage_bps": self.risk.slippage_bps,
+                               "daily_spend_limit_usd": self._spending.daily_limit_usd,
+                           }}, f, indent=2)
         except Exception as e:  # noqa: BLE001
             log.warning("risk config kaydedilemedi: %s", e)
+
+    # ---- kullanıcı risk limitleri (live'a geçiş ayarları) ----
+    def get_risk_limits(self) -> dict:
+        """Çalışma anındaki risk limitleri (UI: live geçiş ayarları ekranı)."""
+        return {
+            "min_confidence": self.risk.min_confidence,
+            "max_position_usd": self.risk.max_position_usd,
+            "max_open_positions": self.risk.max_open_positions,
+            "max_daily_loss_usd": self.risk.max_daily_loss_usd,
+            "max_gas_gwei": self.risk.max_gas_gwei,
+            "slippage_bps": self.risk.slippage_bps,
+            "daily_spend_limit_usd": self._spending.daily_limit_usd,
+            "preset": self._preset,
+            "bounds": {k: list(v) for k, v in _RISK_LIMIT_BOUNDS.items()},
+        }
+
+    def set_risk_limits(self, max_position_usd=None, max_open_positions=None,
+                        max_daily_loss_usd=None, max_gas_gwei=None,
+                        slippage_bps=None, daily_spend_limit_usd=None,
+                        persist: bool = True) -> dict:
+        """Risk/harcama limitlerini çalışma anında ayarla (kalıcı).
+
+        GÜVENLİK: her değer kendi aralığına kırpılır; geçersiz (sayı olmayan)
+        değerler gerekçeli hatayla reddedilir — sessiz başarısızlık yok.
+        Kill-switch SAYAÇLARINA dokunulmaz: yalnızca eşik değişir; gün içi
+        gerçekleşen zarar korunur (limit düşürülürse anında tetiklenebilir).
+        """
+        import dataclasses
+
+        def _num(name, v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                raise ValueError(f"{name} sayısal olmalı (gelen: {v!r})")
+
+        changes: dict = {}
+        for name, val in (("max_position_usd", max_position_usd),
+                          ("max_open_positions", max_open_positions),
+                          ("max_daily_loss_usd", max_daily_loss_usd),
+                          ("max_gas_gwei", max_gas_gwei),
+                          ("slippage_bps", slippage_bps)):
+            if val is None:
+                continue
+            lo, hi = _RISK_LIMIT_BOUNDS[name]
+            v = max(lo, min(hi, _num(name, val)))
+            if name in ("max_open_positions", "slippage_bps"):
+                v = int(round(v))
+            changes[name] = v
+        if changes:
+            self.risk = dataclasses.replace(self.risk, **changes)
+            self.rm.risk = self.risk
+            self.executor.risk = self.risk
+        if daily_spend_limit_usd is not None:
+            lo, hi = _RISK_LIMIT_BOUNDS["daily_spend_limit_usd"]
+            v = max(lo, min(hi, _num("daily_spend_limit_usd", daily_spend_limit_usd)))
+            self._spending.daily_limit_usd = v  # 0 = limitsiz; harcanan korunur
+            changes["daily_spend_limit_usd"] = v
+        if changes and persist:
+            self._save_risk_config()
+            self._emit({"type": "log", "level": "info",
+                        "message": "Risk limitleri güncellendi: "
+                                   + ", ".join(f"{k}={v}" for k, v in changes.items())})
+        return {"ok": True, "changed": changes, "limits": self.get_risk_limits()}
 
     def _apply_min_confidence(self, value: float) -> float:
         """Eşiği tüm risk tüketicilerine uygula (0.40..0.99 aralığına kırpılır)."""
@@ -1020,11 +1271,71 @@ class TradingBot:
         return {"ok": True, "applied": applied,
                 "strategies": self.get_strategies()}
 
+    def quote_probe(self, chain_id: int, usd: float = 25.0) -> dict:
+        """SALT-OKUMA rota testi: `usd` kadar stable ile wrapped-native alımı
+        için canlı DEX quote'u ister. Hiçbir tx göndermez, gas harcamaz.
+
+        Döner: {ok, dex, amount_in, amount_out, price, gas_usd, cost_bps, error}
+        """
+        from engine.config.chains import CHAINS
+        from engine.dex.abis import V2_ROUTER_ABI, V3_QUOTER_V2_ABI
+        from engine.dex import gas as gas_mod
+        from engine.web3x.provider import cs, get_web3
+
+        out: dict = {"ok": False, "chain_id": chain_id}
+        ch = CHAINS.get(chain_id)
+        w3 = get_web3(chain_id)
+        if ch is None or w3 is None:
+            out["error"] = "zincir/RPC yok"
+            return out
+        token_in, token_out = ch.stable, ch.wrapped_native
+        amount_in = int(usd * 10 ** token_in.decimals)
+        best_out, best_dex, best_fee = 0, "", 0
+        errors: list[str] = []
+        for dex in ch.dexes:
+            try:
+                if dex.protocol == "uniswap-v2":
+                    router = w3.eth.contract(address=cs(dex.router), abi=V2_ROUTER_ABI)
+                    amts = router.functions.getAmountsOut(
+                        amount_in, [cs(token_in.address), cs(token_out.address)]).call()
+                    if amts[-1] > best_out:
+                        best_out, best_dex, best_fee = amts[-1], dex.name, 0
+                else:
+                    quoter = w3.eth.contract(address=cs(dex.quoter),
+                                             abi=V3_QUOTER_V2_ABI)
+                    for f in dex.fee_tiers:
+                        try:
+                            q = quoter.functions.quoteExactInputSingle(
+                                (cs(token_in.address), cs(token_out.address),
+                                 amount_in, f, 0)).call()
+                            if q[0] > best_out:
+                                best_out, best_dex, best_fee = q[0], dex.name, f
+                        except Exception:  # noqa: BLE001 - havuz yok/likidite yok
+                            continue
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{dex.name}: {str(e)[:80]}")
+        if best_out <= 0:
+            out["error"] = "; ".join(errors) or "hiçbir DEX quote vermedi"
+            return out
+        out_human = best_out / 10 ** token_out.decimals
+        gas_usd = gas_mod.gas_cost_usd(chain_id, gas_mod.GAS_UNITS_SWAP)
+        # tur maliyeti = 2 bacak gas + 2 bacak swap fee (bps)
+        out.update({
+            "ok": True, "dex": best_dex, "fee_tier": best_fee,
+            "amount_in_usd": usd, "amount_out": round(out_human, 8),
+            "price": round(usd / out_human, 2) if out_human else None,
+            "pair": f"{token_in.symbol}->{token_out.symbol}",
+            "gas_usd": round(gas_usd, 4),
+            "roundtrip_cost_bps": round(
+                (2 * gas_usd / usd + 2 * (best_fee / 1_000_000 or 0.003)) * 10_000, 1),
+        })
+        return out
+
     def live_preflight(self) -> dict:
         """Canlıya geçiş ÖN-UÇUŞ kontrolü — yalnızca OKUMA, hiçbir tx göndermez.
 
         Kontroller: imzalayıcı cüzdan, zincir başına RPC + gas + bakiyeler,
-        LLM yapılandırması, risk limitleri. UI, Live'a geçmeden bunu gösterir.
+        gerçek DEX rota testi, LLM yapılandırması, risk limitleri.
         """
         from engine.config.chains import CHAINS
         from engine.dex.abis import ERC20_ABI
@@ -1069,6 +1380,22 @@ class TradingBot:
                 row["error"] = str(e)[:150]
             chains_out.append(row)
 
+        # Gerçek rota testi (SALT OKUMA): her zincirde stable -> wrapped-native
+        # için canlı quote alınır. Quote gelmiyorsa canlı emir de gelmez —
+        # bu kontrol "boru hattı gerçekten çalışıyor mu"yu kanıtlar.
+        route_ok = False
+        for row in chains_out:
+            if not row.get("rpc_ok"):
+                continue
+            q = self.quote_probe(row["chain_id"])
+            row["quote"] = q
+            route_ok = route_ok or bool(q.get("ok"))
+
+        # KANIT KAPISI: bot paper/shadow modda ölçülebilir bir kenar gösterdi mi?
+        # Göstermediyse gerçek para riske atılmaz (LIVE_GATE=0 ile kapatılır).
+        from engine.trading import live_gate
+        gate = live_gate.evaluate()
+
         llm_key = {"deepseek": settings.deepseek_api_key,
                    "anthropic": settings.anthropic_api_key,
                    "openai": settings.openai_api_key}.get(settings.llm_provider, "")
@@ -1076,12 +1403,16 @@ class TradingBot:
             "signer_wallet": addr is not None,
             "rpc_available": any_rpc,
             "funded_chain": funded,
+            "dex_route_ok": route_ok,
+            "proven_edge": bool(gate.get("ready")),
             "llm_ready": settings.llm_provider == "none" or bool(llm_key),
             "kill_switch_clear": not self.rm.kill_switch_triggered(),
+            "spend_limit_set": self._spending.daily_limit_usd > 0,
         }
         return {
             "ready": all(checks.values()),
             "checks": checks,
+            "gate": gate,
             "wallet_address": addr,
             "chains": chains_out,
             "limits": {
@@ -1126,4 +1457,5 @@ class TradingBot:
         return "ETH"
 
 
+# Modül-seviyesi tekil bot (FastAPI sunucusu ve testler bunu paylaşır).
 bot = TradingBot()

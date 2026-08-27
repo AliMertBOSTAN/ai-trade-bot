@@ -4,6 +4,13 @@ import type {
   MarketSnapshot,
   MarketsResponse,
   NewsItem,
+  CalendarResponse,
+  CalendarGuard,
+  ResearchResponse,
+  QuoteProbe,
+  GoalReport,
+  LeverageAssessment,
+  LeverageSweep,
   AnalystReport,
   GasInfo,
   BacktestResult,
@@ -17,7 +24,22 @@ import type {
   TradeOrder,
   TradeSignal,
   WhaleSummary,
-  WalletInfo
+  WalletInfo,
+  IntelOverview,
+  IntelPanels,
+  IntelSources,
+  IntelBias,
+  HLState,
+  HLUniverseRow,
+  HLPreview,
+  HLOrderResult,
+  HLLimits,
+  HLLiveStatus,
+  AnalystDepthOption,
+  AnalystUniverseRow,
+  AIReport,
+  AIAnalystStatus,
+  AIDecision
 } from '@shared/types'
 
 const BASE = 'http://127.0.0.1:8787'
@@ -52,6 +74,95 @@ export const api = {
       '/portfolio/reset',
       { ...(seedUsd != null ? { seed_usd: seedUsd } : {}), cash_only: cashOnly ?? false }
     ),
+  /* --- Piyasa İstihbaratı (/intel/*) ---
+   * Paneller backend'de TTL cache'lidir; UI sık çağırsa bile upstream'e
+   * gidilmez. `refreshIntel` cache'i atlatmaz, tazelemeyi tetikler. */
+  intelOverview: () => get<IntelOverview>('/intel/overview'),
+  intelGroup: (g: 'macro' | 'onchain' | 'hl') =>
+    get<{ group: string; panels: Partial<IntelPanels> }>(`/intel/group/${g}`),
+  intelPanel: <K extends keyof IntelPanels>(name: K) =>
+    get<{ name: K; data: IntelPanels[K] }>(`/intel/panel/${name}`),
+  intelSources: () => get<IntelSources>('/intel/sources'),
+  intelBias: (symbol?: string) =>
+    get<IntelBias>(`/intel/bias${symbol ? `?symbol=${symbol}` : ''}`),
+  refreshIntel: () =>
+    get<{ ok: boolean; refreshed: number; healthy: number }>('/intel/refresh'),
+
+  /* --- Hyperliquid perp masası (/hl/*) ---
+   * Emirler backend'de risk kapısından geçer; `blocked: true` dönerse emir
+   * GÖNDERİLMEMİŞTİR, `reason` neden reddedildiğini söyler. */
+  hlState: () => get<HLState>('/hl/state'),
+  hlUniverse: (limit = 400) =>
+    get<{ ok: boolean; count: number; rows: HLUniverseRow[]; error?: string }>(
+      `/hl/universe?limit=${limit}`
+    ),
+  /** Tek çağrıda tanı: engine ayakta mı, HL erişilebilir mi, imzalayıcı hazır mı. */
+  hlHealth: () =>
+    get<{
+      engine: boolean
+      hyperliquid: boolean
+      markets: number
+      error: string | null
+      live: HLLiveStatus
+      limits: HLLimits
+    }>('/hl/health'),
+  hlLimits: () => get<{ manual: HLLimits; ai: HLLimits }>('/hl/limits'),
+  hlLiveStatus: () => get<HLLiveStatus>('/hl/live/status'),
+  hlPreview: (body: {
+    symbol: string
+    side: string
+    notional_usd?: number
+    size?: number
+    leverage: number
+    order_type?: string
+    limit_price?: number
+  }) => post<HLPreview>('/hl/preview', body),
+  hlOrder: (body: {
+    symbol: string
+    side: string
+    notional_usd?: number
+    size?: number
+    leverage: number
+    order_type?: string
+    limit_price?: number
+    reduce_only?: boolean
+  }) => post<HLOrderResult>('/hl/order', body),
+  hlClose: (symbol: string, size?: number) =>
+    post<HLOrderResult>('/hl/close', { symbol, ...(size != null ? { size } : {}) }),
+  hlLeverage: (symbol: string, leverage: number, cross = false) =>
+    post<{ ok: boolean; leverage?: number; error?: string }>('/hl/leverage', {
+      symbol,
+      leverage,
+      cross
+    }),
+  hlResetPaper: (seedUsd = 1000) =>
+    post<{ ok: boolean; cash_usd: number }>('/hl/paper/reset', { seed_usd: seedUsd }),
+
+  /* --- AI analist (/analyst/*) --- */
+  analystDepths: () =>
+    get<{ default: string; options: AnalystDepthOption[] }>('/analyst/depths'),
+  analystUniverse: (limit = 250) =>
+    get<{ ok: boolean; count: number; rows: AnalystUniverseRow[] }>(
+      `/analyst/universe?limit=${limit}`
+    ),
+  analystRun: (symbol: string, depth?: string) =>
+    post<AnalystReport>('/analyst/run', { symbol, ...(depth ? { depth } : {}) }),
+  aiStatus: () => get<AIAnalystStatus>('/analyst/auto/status'),
+  aiReports: (limit = 30) =>
+    get<{
+      reports: AIReport[]
+      by_symbol: Record<string, AIReport>
+      status: AIAnalystStatus
+    }>(`/analyst/auto/reports?limit=${limit}`),
+  /** Bir pair için AI kararı. refresh=true önce yeni analiz çalıştırır. */
+  aiDecision: (symbol: string, refresh = false) =>
+    get<AIDecision>(`/analyst/decision/${symbol}${refresh ? '?refresh=true' : ''}`),
+  /** Son analizi kapıdan tekrar geçir, emir GÖNDERME (tavan denemesi için). */
+  aiDryRun: (symbol: string) => post<AIDecision>(`/analyst/decision/${symbol}/dry-run`),
+  aiScan: (symbol?: string) =>
+    post<{ ok: boolean; queued?: string[]; ran_inline?: boolean }>(
+      `/analyst/auto/scan${symbol ? `?symbol=${symbol}` : ''}`
+    ),
   equity: () => get<{ t: number; equity: number }[]>('/equity'),
   performance: () => get<PerformanceReport>('/performance'),
   livePreflight: () => get<LivePreflight>('/live/preflight'),
@@ -61,6 +172,30 @@ export const api = {
     ),
   marketdata: (symbols: string) => get<MarketSnapshot[]>(`/marketdata?symbols=${symbols}`),
   news: (limit = 12) => get<NewsItem[]>(`/news?limit=${limit}`),
+  // Ekonomik veri takvimi + otonom araştırma
+  calendar: (hours = 168, minImportance = 0) =>
+    get<CalendarResponse>(`/calendar?hours=${hours}&min_importance=${minImportance}`),
+  calendarRefresh: () => post<{ ok: boolean; added: number }>('/calendar/refresh'),
+  calendarGuard: (symbol?: string) =>
+    get<CalendarGuard>(`/calendar/guard${symbol ? `?symbol=${symbol}` : ''}`),
+  research: (limit = 20) => get<ResearchResponse>(`/research?limit=${limit}`),
+  researchRun: () => post<{ ok: boolean; result: Record<string, number> }>('/research/run'),
+  quoteProbe: (chainId = 8453, usd = 25) =>
+    get<QuoteProbe>(`/live/quote-probe?chain_id=${chainId}&usd=${usd}`),
+  // Hedef + kaldıraç riski
+  goal: () => get<GoalReport>('/goal'),
+  setGoal: (targetUsd: number, horizonMonths: number, note = '') =>
+    post<GoalReport>('/goal', {
+      target_usd: targetUsd,
+      horizon_months: horizonMonths,
+      note
+    }),
+  leverage: (confidence = 0, entryPrice = 0) =>
+    get<LeverageAssessment>(
+      `/leverage?confidence=${confidence}&entry_price=${entryPrice}`
+    ),
+  leverageSweep: (symbol = 'BTCUSDT', interval = '4h') =>
+    get<LeverageSweep>(`/leverage/sweep?symbol=${symbol}&interval=${interval}`),
   markets: () => get<MarketsResponse>('/markets'),
   analyst: (symbol: string) => get<AnalystReport>(`/analyst/${symbol}`),
   whales: (symbol: string, minUsd = 25000) =>
@@ -93,6 +228,12 @@ export const api = {
     post<{ ok: boolean; min_confidence: number; preset: string }>('/risk/config', {
       min_confidence: minConfidence
     }),
+  riskLimits: () => get<RiskLimits>('/risk/config'),
+  setRiskLimits: (limits: Partial<RiskLimitFields>) =>
+    post<{ ok: boolean; changed: Record<string, number>; limits: RiskLimits }>(
+      '/risk/config',
+      limits
+    ),
   setStrategyConfig: (name: string, cfg: { enabled?: boolean; weight?: number }) =>
     post<{ ok: boolean; strategies: StrategiesResponse }>('/strategies/config', {
       name,
@@ -181,6 +322,22 @@ export interface PerformanceReport {
   open_positions: number
   exit_style: string
   risk_pct_per_trade: number
+}
+
+/** /risk/config — çalışma anında düzenlenebilir risk limitleri. */
+export interface RiskLimitFields {
+  min_confidence: number
+  max_position_usd: number
+  max_open_positions: number
+  max_daily_loss_usd: number
+  max_gas_gwei: number
+  slippage_bps: number
+  daily_spend_limit_usd: number
+}
+export interface RiskLimits extends RiskLimitFields {
+  preset: string
+  /** alan -> [min, max] izin aralığı (backend kırpma sınırları) */
+  bounds: Record<string, [number, number]>
 }
 
 /** /live/preflight yanıtı — canlıya geçiş ön kontrol raporu. */

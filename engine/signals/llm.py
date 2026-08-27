@@ -88,8 +88,6 @@ def _candle_summary(closes: list[float], highs: list[float] | None,
         op, cl, hi, lo = o[i], c[i], h[i], low[i]
         rng = max(hi - lo, 1e-9)
         body = abs(cl - op)
-        up_wick = hi - max(op, cl)
-        dn_wick = min(op, cl) - lo
         color = "yeşil" if cl >= op else "kırmızı"
         body_pct = round(body / rng * 100)
         return f"{color} g%{body_pct}"

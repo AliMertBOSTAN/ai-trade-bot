@@ -28,6 +28,13 @@ from engine.marketdata import chart as market_chart
 from engine.marketdata import markets as market_markets
 from engine.marketdata import news as market_news
 from engine.marketdata.news_watcher import watcher as news_watcher
+from engine.marketdata.calendar import calendar as econ_calendar
+from engine.marketdata.researcher import researcher
+from engine.marketdata.intel.refresher import refresher as intel_refresher
+from engine.api.intel import router as intel_router
+from engine.api.hl import router as hl_router
+from engine.api.analyst import router as analyst_router
+from engine.marketdata.ai_analyst import ai_analyst
 from engine.util.logging import setup_logging
 
 setup_logging()
@@ -38,6 +45,15 @@ settings.validate_or_raise()
 app = FastAPI(title="AI Trade Bot Engine", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
+
+# Piyasa Istihbarati (/intel/*): makro, on-chain akis, Hyperliquid, whale
+# panelleri. Bot durumundan BAGIMSIZ calisir; bot durdurulsa da UI dolu kalir.
+app.include_router(intel_router)
+# Hyperliquid perp masasi (/hl/*) ve AI analist (/analyst/*).
+# DIKKAT: analyst_router BURADA mount edilir; boylece /analyst/depths gibi
+# TAM yollar, asagidaki /analyst/{symbol} parametreli yolundan ONCE eslesir.
+app.include_router(hl_router)
+app.include_router(analyst_router)
 
 # WS event köprüsü: orchestrator senkron thread'den event yayınlar;
 # bunları asyncio kuyruğuna aktarıp bağlı tüm soketlere dağıtırız.
@@ -79,6 +95,32 @@ async def _startup() -> None:
     except Exception as e:  # noqa: BLE001
         import logging as _lg
         _lg.getLogger("app").warning("haber izleyici başlatılamadı: %s", e)
+    # Otonom araştırmacı: ekonomik veri takvimini (CPI/NFP/FOMC + kripto
+    # olayları) tazeler, yaklaşan olaylar için ÖNCEDEN araştırma notu üretir,
+    # olay sonrası sonuç okuması yapar. Kullanıcı sormasa da çalışır.
+    # RESEARCH_WATCHER=0 ile kapatılabilir.
+    try:
+        researcher.start(bot._emit)
+    except Exception as e:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger("app").warning("araştırmacı başlatılamadı: %s", e)
+    # Piyasa istihbaratı tazeleyicisi: panelleri arka planda günceller. Sinyal
+    # motoru ve risk kapıları YALNIZCA bu cache'i okur (tick'te ağ beklemez).
+    # INTEL_REFRESH=0 ile kapatılabilir.
+    try:
+        intel_refresher.start(bot._emit)
+    except Exception as e:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger("app").warning("intel tazeleyici başlatılamadı: %s", e)
+    # Otonom AI analist: izleme listesini periyodik tarar, olay tetikli
+    # (yapı skoru sıçraması / son-dakika haber / likidasyon kaskadı) ek analiz
+    # yapar ve HL_AI_AUTOPILOT=1 ise risk kapılarından geçirip işlem açabilir.
+    # ANALYST_AUTO=0 ile kapatılır (varsayılan kapalı).
+    try:
+        ai_analyst.start(bot._emit)
+    except Exception as e:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger("app").warning("otonom analist başlatılamadı: %s", e)
     # Önceki oturum çalışır durumdaysa snapshot'tan kaldığı yerden devam et.
     bot.maybe_resume()
 
@@ -196,7 +238,14 @@ def strategies_preset(body: PresetBody):
 
 
 class RiskBody(BaseModel):
-    min_confidence: float
+    """Risk ayarları: hepsi opsiyonel — yalnızca gönderilen alanlar değişir."""
+    min_confidence: float | None = None
+    max_position_usd: float | None = None
+    max_open_positions: int | None = None
+    max_daily_loss_usd: float | None = None
+    max_gas_gwei: float | None = None
+    slippage_bps: int | None = None
+    daily_spend_limit_usd: float | None = None
 
 
 class AdviceStrategy(BaseModel):
@@ -223,10 +272,35 @@ def strategies_advice_apply(body: AdviceApplyBody):
         [s.model_dump() for s in body.strategies], body.min_confidence)
 
 
+@app.get("/risk/config")
+def risk_config_get():
+    """Çalışma anındaki risk limitleri + izin aralıkları (live geçiş ayarları)."""
+    return bot.get_risk_limits()
+
+
 @app.post("/risk/config")
 def risk_config(body: RiskBody):
-    """Pozisyon giriş eşiğini (min_confidence, 0..1) çalışma anında ayarla."""
-    return bot.set_min_confidence(body.min_confidence)
+    """Risk ayarlarını çalışma anında değiştir (kalıcı; data/risk.json).
+
+    min_confidence + pozisyon/zarar/gas/slippage/harcama limitleri. Değerler
+    güvenli aralıklara kırpılır; geçersiz girdi 400 döner (fail-fast).
+    """
+    from fastapi import HTTPException
+    out: dict = {}
+    if body.min_confidence is not None:
+        out = bot.set_min_confidence(body.min_confidence)
+    try:
+        limits = bot.set_risk_limits(
+            max_position_usd=body.max_position_usd,
+            max_open_positions=body.max_open_positions,
+            max_daily_loss_usd=body.max_daily_loss_usd,
+            max_gas_gwei=body.max_gas_gwei,
+            slippage_bps=body.slippage_bps,
+            daily_spend_limit_usd=body.daily_spend_limit_usd)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    out.update(limits)
+    return out
 
 
 @app.get("/chains")
@@ -367,10 +441,12 @@ def stop(): return bot.stop()
 
 class ModeBody(BaseModel):
     mode: str
+    # LIVE'a geçişte ön-uçuş kontrolünü atlamak için (bilerek kullanın).
+    force: bool = False
 
 
 @app.post("/mode")
-def set_mode(body: ModeBody): return bot.set_mode(body.mode)
+def set_mode(body: ModeBody): return bot.set_mode(body.mode, force=body.force)
 
 
 class BacktestBody(BaseModel):
@@ -435,6 +511,162 @@ def news_bias(symbol: str):
             "guard": news_watcher.guard(symbol)}
 
 
+@app.get("/calendar")
+def calendar_upcoming(hours: float = 168.0, min_importance: float = 0.0):
+    """Ekonomik veri takvimi: yaklaşan makro + kripto olayları.
+
+    Kaynak: BLS ICS (CPI/PPI/NFP...), statik FOMC tablosu, haberden çıkarılan
+    kripto olayları ve `data/calendar_custom.json`. Anahtar gerektirmez.
+    """
+    return {
+        "status": econ_calendar.status(),
+        "upcoming": [e.to_api() for e in
+                     econ_calendar.upcoming(hours=hours,
+                                            min_importance=min_importance)],
+        "recent": [e.to_api() for e in econ_calendar.recent(hours=48)],
+    }
+
+
+@app.post("/calendar/refresh")
+def calendar_refresh():
+    """Takvimi ZORLA tazele (ICS akışlarını yeniden çeker)."""
+    added = econ_calendar.refresh(force=True)
+    return {"ok": True, "added": added, "status": econ_calendar.status()}
+
+
+@app.get("/calendar/guard")
+def calendar_guard(symbol: str | None = None):
+    """Şu an bir veri penceresinde miyiz? (yeni alım freni + boyut çarpanı)"""
+    factor, note = econ_calendar.size_factor(symbol)
+    return {"symbol": (symbol or "").upper(), "guard": econ_calendar.guard(symbol),
+            "sizeFactor": factor, "sizeNote": note,
+            "activeWindow": [e.to_api() for e in econ_calendar.active_window()]}
+
+
+@app.get("/research")
+def research_notes(limit: int = 20):
+    """Araştırmacının ürettiği hazırlık/sonuç notları (en yeniden eskiye)."""
+    return {"status": researcher.status(), "notes": researcher.notes(limit)}
+
+
+@app.post("/research/run")
+def research_run():
+    """Araştırma turunu ELLE tetikle (takvim tazele + eksik notları üret)."""
+    return {"ok": True, "result": researcher.cycle(),
+            "notes": researcher.notes(10)}
+
+
+@app.get("/research/bias")
+def research_bias(symbol: str | None = None):
+    """Aktif olay penceresindeki araştırma eğilimi (danışma amaçlı)."""
+    return researcher.bias(symbol)
+
+
+@app.get("/leverage")
+def leverage_assess(confidence: float = 0.0, entry_price: float = 0.0,
+                    side: str = "LONG", risk_per_trade: float = 0.02):
+    """Kaldıraç kararı + likidasyon fiyatı + iflas olasılığı + hedef sınırı.
+
+    Kaldıracı KENARIN büyüklüğü belirler (Kelly). Ölçülen kenar yoksa 1× döner
+    — bu bir kısıt değil, kaldıracın matematiğidir.
+    """
+    from engine.analytics import metrics as M
+    from engine.analytics import goal as goal_mod
+    from engine.risk import leverage as lev_mod
+    from engine.storage.db import store
+
+    pnls = M.pnls_from_trades(store.recent_trades(500))
+    g = goal_mod.load_goal()
+    return lev_mod.assess(
+        confidence=confidence, entry_price=entry_price, side=side, pnls=pnls,
+        start_usd=(g.start_equity_usd or None), target_usd=(g.target_usd or None),
+        risk_per_trade=risk_per_trade)
+
+
+@app.get("/leverage/sweep")
+def leverage_sweep_ep(symbol: str = "BTCUSDT", interval: str = "4h",
+                      limit: int = 1000, min_confidence: float = 0.73):
+    """Gerçek veride kaldıraç taraması: hangi kaldıraçta ne oluyor, nerede likidasyon.
+
+    Ücret + funding + likidasyon bariyeri dahildir. Ağ erişimi gerektirir.
+    """
+    from dataclasses import replace as _replace
+    from engine.backtest.backtester import run_backtest
+    from engine.backtest.leveraged import leverage_sweep
+    from engine.backtest.run_live_backtest import fetch_binance
+    from engine.config.settings import RiskConfig
+    from engine.trading.exits import ExitConfig
+    from fastapi import HTTPException
+    try:
+        candles = fetch_binance(symbol, interval, limit)
+        r = run_backtest(candles, symbol[:3], "USD", 10000.0,
+                         _replace(RiskConfig(), min_confidence=min_confidence),
+                         interval=interval, exit_style="fixed",
+                         exit_cfg=ExitConfig(), cooldown_bars=0, risk_pct=0.0,
+                         htf_filter="off")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"veri/backtest hatası: {e}")
+    sw = leverage_sweep(r["equity_curve"], n_trades=r.get("num_closed_trades", 0))
+    sw["spot_return_pct"] = r["total_return_pct"]
+    sw["symbol"] = symbol.upper()
+    sw["interval"] = interval
+    return sw
+
+
+class GoalBody(BaseModel):
+    target_usd: float
+    horizon_months: float
+    start_equity_usd: float | None = None
+    note: str = ""
+
+
+@app.get("/goal")
+def goal_get():
+    """Hedef durum raporu: gereken CAGR vs ölçülen CAGR, gerçekçilik bandı.
+
+    SALT OKUMA — hiçbir risk ayarını değiştirmez. Bot hedefe göre DAVRANMAZ.
+    """
+    from engine.analytics import goal as goal_mod
+    return goal_mod.report()
+
+
+@app.post("/goal")
+def goal_set(body: GoalBody):
+    """Hedef tanımla/güncelle (tutar + ay cinsinden ufuk)."""
+    from engine.analytics import goal as goal_mod
+    goal_mod.set_goal(body.target_usd, body.horizon_months,
+                      body.start_equity_usd, body.note)
+    return goal_mod.report()
+
+
+@app.delete("/goal")
+def goal_clear():
+    """Hedefi kaldır."""
+    from engine.analytics import goal as goal_mod
+    goal_mod.clear_goal()
+    return {"ok": True}
+
+
+@app.get("/live/gate")
+def live_gate_status():
+    """Kanıt kapısı: bot canlıya geçecek kadar kanıtlanmış kenar gösterdi mi?"""
+    from engine.trading import live_gate
+    return live_gate.evaluate()
+
+
+@app.get("/live/leverage-status")
+def live_leverage_status():
+    """Kaldıraçlı CANLI işlem envanteri: ne var, ne yok, ne engelliyor."""
+    from engine.trading import live_gate
+    return live_gate.leverage_status()
+
+
+@app.get("/live/quote-probe")
+def live_quote_probe(chain_id: int = 8453, usd: float = 25.0):
+    """SALT-OKUMA canlı rota testi: gerçek DEX quote + gas + tur maliyeti."""
+    return bot.quote_probe(chain_id, usd)
+
+
 @app.get("/markets")
 def markets():
     """Botun gördüğü TÜM enstrümanlar tek çatıda (Keşfet ekranı).
@@ -464,12 +696,14 @@ def gas():
 
 
 @app.get("/analyst/{symbol}")
-def analyst(symbol: str, q: str | None = None):
-    """LLM piyasa analisti: CEX/DEX verisi + haberleri karşılaştırıp yorumlar.
+def analyst(symbol: str, q: str | None = None, depth: str | None = None):
+    """LLM piyasa analisti: teknik + akış + istihbarat + haber tek bağlamda.
 
-    LLM key .env'de yapılandırılmamışsa yalnızca sayısal rapor döner.
+    depth: kisa | normal | derin | cok_derin (ya da doğrudan token sayısı).
+    LLM key .env'de yapılandırılmamışsa yalnızca sayısal rapor + sezgisel
+    görüş döner.
     """
-    return market_analyst.analyze(symbol, news_query=q)
+    return market_analyst.analyze(symbol, news_query=q, depth=depth)
 
 
 @app.get("/whales/{symbol}")

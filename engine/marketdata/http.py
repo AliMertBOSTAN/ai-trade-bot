@@ -38,9 +38,18 @@ def _is_retryable(err: Exception) -> bool:
     return isinstance(err, (urllib.error.URLError, TimeoutError, OSError))
 
 
-def _fetch(url: str, timeout: float) -> bytes:
-    """Ustel backoff ile retry'li ham getirme. Kalici hatada son hatayi raise eder."""
-    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+def _fetch(url: str, timeout: float,
+           headers: dict[str, str] | None = None,
+           data: bytes | None = None) -> bytes:
+    """Ustel backoff ile retry'li ham getirme. Kalici hatada son hatayi raise eder.
+
+    headers: ek istek basliklari (API anahtari vb.). data verilirse POST olur.
+    """
+    hdrs = {"User-Agent": _UA}
+    if headers:
+        hdrs.update(headers)
+    req = urllib.request.Request(url, headers=hdrs, data=data,
+                                 method="POST" if data is not None else "GET")
     last: Exception | None = None
     for attempt in range(_MAX_RETRIES):
         try:
@@ -58,24 +67,48 @@ def _fetch(url: str, timeout: float) -> bytes:
     raise last
 
 
-def get_json(url: str, ttl: float = 10.0, timeout: float = 15.0) -> Any:
-    """URL'den JSON cek; ttl saniye cache'le; gecici hatada retry. Kalici hata -> raise."""
+def get_json(url: str, ttl: float = 10.0, timeout: float = 15.0,
+             headers: dict[str, str] | None = None) -> Any:
+    """URL'den JSON cek; ttl saniye cache'le; gecici hatada retry. Kalici hata -> raise.
+
+    headers verilirse cache anahtari basliklara gore ayrisir (farkli API
+    anahtariyla ayni URL'in yaniti karismasin diye).
+    """
     now = time.time()
-    hit = _cache.get(url)
+    key = url if not headers else url + "|" + repr(sorted(headers.items()))
+    hit = _cache.get(key)
     if hit and now - hit[0] < ttl:
         return hit[1]
-    data = json.loads(_fetch(url, timeout))
-    _cache[url] = (now, data)
+    data = json.loads(_fetch(url, timeout, headers=headers))
+    _cache[key] = (now, data)
     return data
 
 
-def get_text(url: str, ttl: float = 60.0, timeout: float = 15.0) -> str:
+def post_json(url: str, payload: Any, ttl: float = 10.0, timeout: float = 15.0,
+              headers: dict[str, str] | None = None) -> Any:
+    """JSON POST (Hyperliquid /info gibi uclar icin); ttl saniye cache'li."""
+    body = json.dumps(payload).encode("utf-8")
+    now = time.time()
+    key = "POST:" + url + "|" + json.dumps(payload, sort_keys=True)
+    hit = _cache.get(key)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    hdrs = {"Content-Type": "application/json"}
+    if headers:
+        hdrs.update(headers)
+    data = json.loads(_fetch(url, timeout, headers=hdrs, data=body))
+    _cache[key] = (now, data)
+    return data
+
+
+def get_text(url: str, ttl: float = 60.0, timeout: float = 15.0,
+             headers: dict[str, str] | None = None) -> str:
     """URL'den duz metin/XML cek (RSS icin); ttl saniye cache; gecici hatada retry."""
     now = time.time()
     key = "TXT:" + url
     hit = _cache.get(key)
     if hit and now - hit[0] < ttl:
         return hit[1]
-    text = _fetch(url, timeout).decode("utf-8", errors="replace")
+    text = _fetch(url, timeout, headers=headers).decode("utf-8", errors="replace")
     _cache[key] = (now, text)
     return text

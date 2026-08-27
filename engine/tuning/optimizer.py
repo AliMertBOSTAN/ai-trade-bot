@@ -105,6 +105,49 @@ def optimize_symbol(candles: list[dict], symbol: str, quote: str,
     return params
 
 
+def optimize_symbol_atr(candles: list[dict], symbol: str, quote: str,
+                        starting_cash: float, base_risk: RiskConfig,
+                        interval: str = "1h",
+                        param_grid: dict[str, list] | None = None,
+                        save: bool = True) -> dict:
+    """ATR (canlı-eşdeğer) modda çok-boyutlu ızgara + walk-forward sağlamlık.
+
+    min_confidence × trail_mult × atr_stop_mult × cooldown_bars × risk_pct
+    taranır (varsayılan: walk_forward.DEFAULT_PARAM_GRID). Kazanan parametreler
+    walk-forward ile out-of-sample doğrulanır ve tuned_params.json'a yazılır;
+    orchestrator _maybe_trade sembol-bazlı min_confidence kapısını otomatik
+    kullanır. Ölçümler: docs/BACKTEST_IMPROVEMENTS.md
+    """
+    from engine.backtest.walk_forward import (DEFAULT_PARAM_GRID,
+                                              grid_search_params)
+    grid = param_grid or DEFAULT_PARAM_GRID
+    best_params, best_res = grid_search_params(
+        candles, symbol, quote, starting_cash, base_risk, grid, interval)
+    if not best_params:
+        return {"ok": False, "reason": "ızgara sonuç vermedi"}
+
+    robust = False
+    avg_oos = 0.0
+    try:
+        wf = walk_forward(candles, symbol, quote, starting_cash, base_risk,
+                          min_conf_grid=[base_risk.min_confidence],
+                          interval=interval, param_grid=grid)
+        robust = wf.get("robust", False)
+        avg_oos = wf.get("avg_oos_return_pct", 0.0)
+    except ValueError:
+        pass
+
+    params = {"mode": "atr", **best_params,
+              "in_sample_return_pct": best_res.get("total_return_pct", 0.0),
+              "in_sample_sharpe": best_res.get("sharpe", 0.0),
+              "robust": robust, "avg_oos_return_pct": avg_oos,
+              "ts": int(time.time() * 1000), "ok": True}
+    if save:
+        _save(symbol, params)
+        log.info("tuned(atr) %s -> %s", symbol, params)
+    return params
+
+
 def apply_tuned(base_risk: RiskConfig, symbol: str) -> RiskConfig:
     """Kayıtlı ayar varsa RiskConfig'e uygula; yoksa olduğu gibi döndür."""
     t = get_tuned(symbol)

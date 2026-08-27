@@ -44,6 +44,56 @@ class RiskManager:
         gas_cost = gas.gas_cost_usd(chain_id, gas.GAS_UNITS_SWAP)
         return not (settings.is_live and gas_cost > size * gas.MAX_GAS_FRACTION)
 
+    def _edge_ok(self, tech) -> tuple[bool, str]:
+        """Maliyet-farkinda giris kapisi (min_edge_ratio > 0 iken).
+
+        Beklenen lehte hareket (edge_atr_mult x ATR / fiyat) tur maliyetinin
+        (slippage + taker fee, iki yon) min_edge_ratio kati altindaysa yeni
+        pozisyon ACMA — dusuk oynaklikta islem maliyeti kari yer (olcumler:
+        docs/BACKTEST_IMPROVEMENTS.md). ATR/fiyat yoksa kapi pasiftir (fail-safe).
+        """
+        r = self.risk
+        if r.min_edge_ratio <= 0 or tech is None:
+            return True, ""
+        price = float(getattr(tech, "price", 0.0) or 0.0)
+        atr = float(getattr(tech, "atr", 0.0) or 0.0)
+        if price <= 0 or atr <= 0:
+            return True, ""
+        # Tek kaynak: paper broker'in taker fee sabiti (canli DEX fee'ye yakin).
+        from engine.trading.paper_broker import TAKER_FEE_PCT
+        expected = r.edge_atr_mult * atr / price
+        round_trip = 2.0 * (r.slippage_bps / 10_000.0) + 2.0 * TAKER_FEE_PCT
+        if expected < r.min_edge_ratio * round_trip:
+            return False, (f"Beklenen hareket %{expected * 100:.2f} < "
+                           f"{r.min_edge_ratio:.1f}x maliyet %{round_trip * 100:.2f} "
+                           f"- islem ekonomik degil")
+        return True, ""
+
+    def _intel_ok(self, signal: TradeSignal) -> tuple[bool, str]:
+        """Piyasa yapisi kapisi (intel_block_score > 0 iken).
+
+        Makro rejim + on-chain akis + Hyperliquid/whale panellerinin birlesik
+        bias'i karara TERS ve esikten guclu ise YENI pozisyon acilmaz. Kapi
+        yalnizca ACILISI etkiler; kapanis/cover her zaman serbesttir. Intel
+        verisi yoksa (test, ag yok, INTEL_SIGNAL=0) kapi PASIFTIR (fail-safe).
+        """
+        thr = self.risk.intel_block_score
+        if thr <= 0:
+            return True, ""
+        try:
+            from engine.marketdata.intel import bias as intel_bias
+            b = intel_bias.combined(signal.base)
+        except Exception:  # noqa: BLE001
+            return True, ""
+        if not b.get("ok"):
+            return True, ""
+        raw = float(b.get("score") or 0.0)
+        aligned = raw if signal.action == "BUY" else -raw
+        if aligned <= -thr:
+            return False, (f"Piyasa yapisi karara ters ({b.get('label')}, "
+                           f"skor {raw:+.2f} <= -{thr:.2f}) - yeni pozisyon yok")
+        return True, ""
+
     def evaluate(self, signal: TradeSignal, open_positions: dict[str, Position],
                  cash_usd: float) -> RiskDecision:
         if self.kill_switch_triggered():
@@ -64,6 +114,12 @@ class RiskManager:
                                     size_usd=abs(pos.amount) * signal.technical.price)
             if key not in open_positions and len(open_positions) >= self.risk.max_open_positions:
                 return RiskDecision(False, "Azami pozisyon sayisina ulasildi")
+            edge_ok, edge_reason = self._edge_ok(signal.technical)
+            if not edge_ok:
+                return RiskDecision(False, edge_reason)
+            intel_ok, intel_reason = self._intel_ok(signal)
+            if not intel_ok:
+                return RiskDecision(False, intel_reason)
             size = min(self.risk.max_position_usd, cash_usd * 0.95)
             if size < 10:
                 return RiskDecision(False, "Yetersiz nakit")
@@ -81,9 +137,20 @@ class RiskManager:
         # SHORT ac/ekle
         if pos is None and len(open_positions) >= self.risk.max_open_positions:
             return RiskDecision(False, "Azami pozisyon sayisina ulasildi")
-        size = min(self.risk.max_position_usd, cash_usd * 0.95)
+        edge_ok, edge_reason = self._edge_ok(signal.technical)
+        if not edge_ok:
+            return RiskDecision(False, edge_reason)
+        intel_ok, intel_reason = self._intel_ok(signal)
+        if not intel_ok:
+            return RiskDecision(False, intel_reason)
+        # DIKKAT: short acilinca satis geliri NAKDI sisirir; cash*0.95 ile
+        # boyutlamak her yeni short'u buyutur (gizli kaldirac). Tavan EQUITY
+        # uzerinden hesaplanir — kaldiracsiz, long tarafiyla simetrik maruziyet.
+        equity = cash_usd + sum(p.amount * p.last_price
+                                for p in open_positions.values())
+        size = min(self.risk.max_position_usd, max(0.0, equity) * 0.95)
         if size < 10:
-            return RiskDecision(False, "Yetersiz nakit (short)")
+            return RiskDecision(False, "Yetersiz sermaye (short)")
         if not self._gas_ok(signal.chain_id, size):
             return RiskDecision(False, "Gas - islem ekonomik degil")
         return RiskDecision(True, "short ac", size_usd=size)

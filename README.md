@@ -173,6 +173,120 @@ GET /news?limit=20&q=bitcoin
 GET /analyst/ETH           # LLM karşılaştırmalı piyasa yorumu
 ```
 
+## Piyasa İstihbaratı paneli
+
+Electron arayüzündeki **Piyasa İstihbaratı** sekmesi 20 paneli tek ekranda
+toplar — üç grup halinde:
+
+| Grup | Paneller | Kaynak |
+|---|---|---|
+| **Makro & Duyarlılık** | Risk-On/Off skoru, Kripto + ABD Korku&Açgözlülük, makro zemin şeridi (SPX/NDX/DJI/VIX/DXY/ABD10Y/altın/gümüş/WTI/IBIT/MSTR), Coinbase primi, spot ETF akışı, BTC-makro korelasyon | Yahoo Finance, alternative.me, CNN, Coinbase, Binance/OKX/Kraken |
+| **On-chain & Akışlar** | Stablecoin likiditesi (+zincir kırılımı), sektör rotasyonu, zincir komisyonları & DEX hacmi, BTC maliyet tabanı (MVRV), zincir TVL & dominans, token unlock takvimi, DeFi getirileri, son exploit'ler | DefiLlama, CoinGecko, bitcoin-data.com |
+| **Hyperliquid & Whale** | HL perp duyarlılığı (OI ağırlıklı funding, genişlik), cüzdan konumlanması, smart-money radarı, borsa rezervleri | Hyperliquid public API, Binance orderflow |
+
+Hepsi **anahtarsız** çalışır. `.env`'e `COINGLASS_API_KEY` / `CMC_API_KEY` /
+`NANSEN_API_KEY` eklenirse ilgili paneller gerçek (vekil olmayan) veriye geçer;
+eklenmezse panel bunu açıkça yazar. Ayrıntılı liste: `.env.example`.
+
+Panellerin birleşik **yapı skoru** (-1..+1) sinyal motoruna girer: karara ters
+ve güçlüyse güven tavanlanır, destekliyorsa küçük bonus verilir; `INTEL_BLOCK_SCORE`
+eşiğini aşan ters yapıda yeni pozisyon açılmaz (kapanışa dokunmaz).
+Sadece görsel istiyorsan `INTEL_SIGNAL=0`.
+
+```bash
+python -m scripts.intel_smoke          # hangi kaynak erişilebilir, tablo halinde
+curl localhost:8787/intel/overview     # tüm paneller tek JSON
+curl localhost:8787/intel/sources      # açık/kapalı sağlayıcılar + veri tazeliği
+```
+
+## Hyperliquid kaldıraçlı işlem masası
+
+**İşlem → Hyperliquid** sekmesi: hem sen hem AI aynı masadan işlem yapar.
+
+- **Kağıt mod (varsayılan)** — gerçek mark fiyatı, gerçek funding ve gerçek
+  azami kaldıraçla simülasyon. Ücret, kayma, funding tahakkuku, likidasyon
+  kontrolü hepsi işler. Anahtar gerekmez.
+- **Canlı mod** — iki şart birden: imzalayıcı *ve* `HL_LIVE=1`.
+  İmzalayıcı için önerilen yol Hyperliquid'in **API Wallet**'ı: sadece işlem
+  yetkisi olan, para çekemeyen ayrı bir anahtar. Alternatif olarak projedeki
+  şifreli keystore kullanılır. Anahtarı yalnızca sen `.env`'e yazarsın.
+
+Solda **aranabilir piyasa listesi** var: Hyperliquid'in tüm perp evreni (~177
+sembol) fiyat, 24s değişim, saatlik funding, 24s hacim ve azami kaldıraçla
+listelenir; hacme/değişime/funding'e/OI'ye göre sıralanır, bir satıra tıklamak
+emir formunu o piyasaya geçirir. Sağda seçili piyasanın künyesi ve emir formu.
+
+Emir göndermeden önce **önizleme** çıkar: kapının kararı, kırpılan kaldıraç/
+nosyonel, gereken teminat, likidasyon fiyatı ve saatlik funding. Kapı
+reddederse sebep formun üstünde kırmızı olarak yazılır ve gönder düğmesi kapanır.
+
+Bir şey görünmüyorsa tek çağrıda tanı: `curl localhost:8787/hl/health` — engine
+ayakta mı, Hyperliquid erişilebilir mi, kaç piyasa var, imzalayıcı hazır mı.
+Arayüz de aynı hatayı okunur hâle çevirir ("engine çalışmıyor", "eski sürüm —
+uvicorn'u yeniden başlat").
+
+### Risk kapıları — elle ve AI emirleri aynı yerden geçer
+
+| Kapı | .env | Varsayılan |
+|---|---|---|
+| Kaldıraç tavanı | `HL_MAX_LEVERAGE` | 5× |
+| Tek pozisyon nosyoneli | `HL_MAX_NOTIONAL_USD` | 500$ |
+| Toplam maruziyet | `HL_MAX_TOTAL_NOTIONAL` | 1500$ |
+| Eşzamanlı pozisyon | `HL_MAX_POSITIONS` | 3 |
+| Günlük zarar kill-switch | `HL_MAX_DAILY_LOSS_USD` | 100$ |
+| Likidasyona asgari mesafe | `HL_MIN_LIQ_DISTANCE` | %12 |
+| Aynı sembolde bekleme | `HL_COOLDOWN_S` | 300 sn |
+
+Pozisyon **kapatma** hiçbir kapıdan engellenmez — kill-switch bile pozisyondan
+çıkmayı yasaklamaz.
+
+### AI kararı — POZİSYON AL / BEKLE / GİRME
+
+İşlem sekmesindeki **AI Kararı** kartı, seçili pair için analistin ne
+düşündüğünü otopilot kapalıyken de gösterir. Üç sonuçtan biri çıkar:
+
+| Karar | Ne demek |
+|---|---|
+| **POZİSYON AL** | Analist yön verdi, güven eşiği geçildi ve risk kapısı onayladı. Otopilot kapalıysa emir gönderilmez — planı tek tıkla emir formuna aktarıp elle açarsın. |
+| **BEKLE** | Yön yok, güven düşük, LLM kapalı ya da bu pair hiç taranmadı. |
+| **GİRME** | Risk kapısı durdurdu (kill-switch, tavan, likidasyon mesafesi, cooldown, yapı skoru çelişkisi) — sebep kartta yazar. |
+
+Kart ayrıca AI'ın seçtiği kaldıracı, kırpılmış hâlini, nosyoneli, giriş/stop/
+hedef seviyelerini ve kaldıraç gerekçesini gösterir. "Kapıyı dene" düğmesi
+`.env` tavanlarını değiştirdikten sonra emir göndermeden yeniden değerlendirir.
+
+**Kaldıraç kararı artık analistin.** Prompt onu stop mesafesine, oynaklığa,
+funding yönüne ve katman uyumuna göre 1–10× arasında seçmeye ve gerekçesini
+yazmaya zorluyor; sonra borsa tavanı ve senin risk tavanların kırpıyor. Emir
+formunda kaldıraç için **Elle / AI** modu var — AI modunda slider kilitlenir ve
+analistin seçimi uygulanır.
+
+`HL_AI_AUTOPILOT=1` yaparsan aynı plan onay istemeden uygulanır. AI'ın tavanları
+seninkilerden **dar**dır (`HL_AI_MAX_NOTIONAL_USD`, `HL_AI_MAX_LEVERAGE`,
+`HL_AI_MIN_CONFIDENCE`) ve LLM kapalıyken hiçbir işlem açılmaz.
+
+> Kaldıraçlı işlem sermayenin tamamını kaybettirebilir. Canlıya geçmeden önce
+> kağıt modda ölç, sonra `HL_TESTNET=1` ile dene, en son `HL_LIVE=1` yap.
+
+## AI analist
+
+**Karar → AI Analist** sekmesi. Üç yenilik:
+
+1. **Geniş sembol evreni** — arama kutusundan Hyperliquid'in 177 perp'i ve
+   izleme listesi. (Eskiden 8 sembole sabitti.)
+2. **Analiz derinliği** — Kısa / Normal / Derin / Çok derin. Bu, LLM'in
+   üretebileceği token bütçesidir (500 → 4000); eskiden sabit 600 olduğu için
+   uzun gerekçeler kesiliyordu.
+3. **İstihbarat-farkında prompt** — analist artık makro rejimi, risk-on/off
+   skorunu, ETF akışını, stablecoin likiditesini, sektör rotasyonunu, MVRV
+   maliyet tabanını, Hyperliquid konumlanmasını ve smart-money akışını da
+   görür; zemin → akış → yapı → kalabalık sırasıyla değerlendirip seviyeler,
+   senaryolar, çelişkiler ve somut bir perp işlem planı üretir.
+
+Otonom çalıştırmak için `ANALYST_AUTO=1`: izleme listesini periyodik tarar,
+ayrıca yapı skoru sıçradığında / son-dakika haberde / likidasyon kaskadında
+sıra beklemeden analiz eder.
+
 ## Risk Controls (özet)
 
 | Önlem | Nerede | Açıklama |

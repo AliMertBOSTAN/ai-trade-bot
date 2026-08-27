@@ -72,23 +72,55 @@ class LiveBroker:
         self._sign_send_wait(w3, tx)
 
     def _base_tx(self, w3) -> dict:
+        """Ortak tx alanları. Base/Optimism/Arbitrum gibi EIP-1559 zincirlerinde
+        maxFeePerGas/maxPriorityFeePerGas kullanılır (legacy gasPrice fazla öder);
+        1559 desteklemeyen zincirde gasPrice'a düşülür. Her iki yolda da
+        `risk.max_gas_gwei` TAVANI uygulanır — aşarsa tx GÖNDERİLMEZ.
+        """
         gas_price = w3.eth.gas_price
         gas_gwei = gas_price / 1e9
         if gas_gwei > self.risk.max_gas_gwei:
             raise RuntimeError(
                 f"Gas {gas_gwei:.1f} gwei > tavan {self.risk.max_gas_gwei} gwei - iptal")
-        return {
+        tx: dict = {
             "from": self.account.address,
             "nonce": w3.eth.get_transaction_count(self.account.address),
-            "gasPrice": gas_price,
             "chainId": w3.eth.chain_id,
         }
+        base_fee = None
+        try:
+            base_fee = w3.eth.get_block("latest").get("baseFeePerGas")
+        except Exception:  # noqa: BLE001 - 1559 desteklemeyen node/zincir
+            base_fee = None
+        if base_fee:
+            try:
+                tip = w3.eth.max_priority_fee
+            except Exception:  # noqa: BLE001
+                tip = w3.to_wei(0.001, "gwei")
+            # Tavan: 2×baseFee + tip, ama ASLA max_gas_gwei üstünde olamaz.
+            cap = int(2 * base_fee + tip)
+            hard_cap = int(self.risk.max_gas_gwei * 1e9)
+            tx["maxFeePerGas"] = min(cap, hard_cap)
+            tx["maxPriorityFeePerGas"] = min(int(tip), tx["maxFeePerGas"])
+        else:
+            tx["gasPrice"] = gas_price
+        return tx
+
+    @staticmethod
+    def _raw(signed) -> bytes:
+        """eth-account sürüm uyumu: <=0.12 `rawTransaction`, >=0.13 `raw_transaction`."""
+        raw = getattr(signed, "raw_transaction", None)
+        if raw is None:
+            raw = getattr(signed, "rawTransaction", None)
+        if raw is None:
+            raise RuntimeError("İmzalı tx ham baytları okunamadı (eth-account sürümü?)")
+        return raw
 
     def _sign_send_wait(self, w3, tx: dict) -> str:
         if "gas" not in tx:
             tx["gas"] = int(w3.eth.estimate_gas(tx) * 1.2)
         signed = self.account.sign_transaction(tx)
-        tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+        tx_hash = w3.eth.send_raw_transaction(self._raw(signed))
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
         if receipt.status != 1:
             raise RuntimeError(f"Tx revert oldu: {tx_hash.hex()}")
@@ -119,6 +151,23 @@ class LiveBroker:
             gas_gwei = w3.eth.gas_price / 1e9
             if gas_gwei > self.risk.max_gas_gwei:
                 raise RuntimeError(f"Gas {gas_gwei:.1f} gwei tavanı aştı")
+
+            # SON SAVUNMA HATTI (broker seviyesi). Orchestrator kapıları bir
+            # şekilde atlansa bile gerçek para burada korunur:
+            #   a) tek işlem nosyoneli max_position_usd tavanını aşamaz,
+            #   b) gas maliyeti nosyonelin MAX_GAS_FRACTION'ından büyükse işlem
+            #      ekonomik değildir (küçük emirde gas kârı yer).
+            notional_usd = float(order.amount) * float(order.price or 0.0)
+            hard_cap = self.risk.max_position_usd * 1.05  # %5 fiyat kayması payı
+            if notional_usd > hard_cap:
+                raise RuntimeError(
+                    f"İşlem büyüklüğü ${notional_usd:,.2f} > tavan "
+                    f"${hard_cap:,.2f} (risk.max_position_usd) - iptal")
+            gas_usd = gas.gas_cost_usd(order.chain_id, gas.GAS_UNITS_SWAP)
+            if notional_usd > 0 and gas_usd > notional_usd * gas.MAX_GAS_FRACTION:
+                raise RuntimeError(
+                    f"Gas ${gas_usd:.2f}, ${notional_usd:.2f} nosyonelin "
+                    f"%{gas.MAX_GAS_FRACTION * 100:.0f}'inden büyük - ekonomik değil")
 
             # Bakiye ön kontrolü: yetersiz bakiyeyle estimate_gas'ın anlaşılmaz
             # revert hatası yerine NET gerekçeyle reddet (para/gas boşa gitmez).

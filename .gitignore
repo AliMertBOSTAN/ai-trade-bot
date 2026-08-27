@@ -1,10 +1,35 @@
+# --- bağımlılıklar / derleme çıktıları ---
 node_modules/
 out/
 dist/
-*.log
+webdist/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+# Rust derleme çıktısı — GB'lara çıkar, depoda işi yok
+execd/target/
+
+# --- gizli bilgiler (ASLA commit etme) ---
 .env
+.env.local
+*.keystore
+*.key
+
+# --- çalışma zamanı verisi ---
 data/*.db
 data/*.db-journal
+data/intel_cache.json
+data/hl_paper.json
+data/ai_reports.json
+notdata/
+*.log
+
+# --- geçici / araç çıktıları ---
+*.tar.gz
+_to_delete/
+electron.vite.config.*.mjs
+tsconfig.*.tsbuildinfo
 .DS_Store
-docs/
-.venv/

@@ -26,6 +26,16 @@ class RiskConfig:
     min_confidence: float = float(os.getenv("MIN_CONFIDENCE", "0.73"))
     min_arb_net_profit_usd: float = 5.0
     use_flashbots: bool = True
+    # Maliyet-farkinda giris kapisi: beklenen lehte hareket (edge_atr_mult x ATR)
+    # tur maliyetinin (slippage+fee, iki yon) en az min_edge_ratio kati degilse
+    # YENI pozisyon acilmaz. 0 = kapali (eski davranis). Onerilen: 2.0
+    # Gerekce ve olcumler: docs/BACKTEST_IMPROVEMENTS.md
+    min_edge_ratio: float = float(os.getenv("MIN_EDGE_RATIO", "0"))
+    edge_atr_mult: float = float(os.getenv("EDGE_ATR_MULT", "3.0"))
+    # Piyasa yapisi kapisi: intel bias'i karara TERS ve bu esikten guclu ise
+    # YENI pozisyon acilmaz (mevcut pozisyonu KAPATMAYI hicbir zaman engellemez).
+    # 0 = kapali. Onerilen 0.6. Intel verisi yoksa kapi otomatik pasiftir.
+    intel_block_score: float = float(os.getenv("INTEL_BLOCK_SCORE", "0.6"))
 
 
 @dataclass(frozen=True)
@@ -38,6 +48,17 @@ class Settings:
     paper_seed_usd: float = float(os.getenv("PAPER_SEED_USD", "100"))
     paper_seed_asset: str = os.getenv("PAPER_SEED_ASSET", "WETH")
     paper_seed_chain: int = int(os.getenv("PAPER_SEED_CHAIN", "1"))
+
+    # Sinyal hizalaması: "candles" = sinyaller sabit mum kapanışlarıyla üretilir
+    # (backtest ile birebir; önerilen). "ticks" = eski tick-karışımı davranış.
+    signal_align: str = os.getenv("SIGNAL_ALIGN", "candles")
+    # 4h VARSAYILAN (olcum sonucu): gercek Binance verisiyle 1000 mumluk
+    # backtestlerde 1h her esikte ZARAR ederken (BTC -3.3%, ETH -10.0%),
+    # 4h esik 0.73'te BTC +3.9% / ETH +0.3% verdi ve ayni donemde al-tut
+    # (-7.7% / -6.4%) belirgin sekilde asildi. Olcumler: docs/LIVE_READINESS.md
+    signal_interval: str = os.getenv("SIGNAL_INTERVAL", "4h")
+    # Otomatik yeniden-optimizasyon periyodu (saat). 0 = kapalı. Örn. 168 = haftalık.
+    auto_tune_interval_h: float = float(os.getenv("AUTO_TUNE_INTERVAL_H", "0"))
 
     llm_provider: str = os.getenv("LLM_PROVIDER", "deepseek")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
@@ -55,6 +76,34 @@ class Settings:
 
     binance_api_key: str = os.getenv("BINANCE_API_KEY", "")
     binance_secret: str = os.getenv("BINANCE_SECRET", "")
+
+    # --- Piyasa Istihbarati (intel) — hepsi OPSIYONEL ---
+    # Anahtar yoksa ilgili panel ucretsiz yedege duser veya "kapali" gorunur;
+    # cekirdek akis anahtarsiz calismaya devam eder.
+    coinglass_api_key: str = os.getenv("COINGLASS_API_KEY", "")
+    cmc_api_key: str = os.getenv("CMC_API_KEY", "")
+    nansen_api_key: str = os.getenv("NANSEN_API_KEY", "")
+    intel_refresh: bool = os.getenv(
+        "INTEL_REFRESH", "1").strip().lower() not in ("0", "false", "no")
+    intel_refresh_s: float = float(os.getenv("INTEL_REFRESH_S", "180"))
+    intel_signal: bool = os.getenv(
+        "INTEL_SIGNAL", "1").strip().lower() not in ("0", "false", "no")
+
+    # --- AI analist (derinlik + otonom tarama) ---
+    analyst_depth: str = os.getenv("ANALYST_DEPTH", "normal")
+    analyst_auto: bool = os.getenv(
+        "ANALYST_AUTO", "0").strip().lower() in ("1", "true", "yes")
+    analyst_interval_min: float = float(os.getenv("ANALYST_INTERVAL_MIN", "30"))
+    analyst_watchlist: str = os.getenv("ANALYST_WATCHLIST", "")
+
+    # --- Hyperliquid perp masasi (hepsi OPSIYONEL) ---
+    # Canli emir icin HEM imzalayici HEM de hl_live=True gerekir.
+    hl_live: bool = os.getenv("HL_LIVE", "0").strip().lower() in ("1", "true", "yes")
+    hl_testnet: bool = os.getenv(
+        "HL_TESTNET", "0").strip().lower() in ("1", "true", "yes")
+    hl_account_address: str = os.getenv("HL_ACCOUNT_ADDRESS", "")
+    hl_ai_autopilot: bool = os.getenv(
+        "HL_AI_AUTOPILOT", "0").strip().lower() in ("1", "true", "yes")
 
     news_feeds: tuple = field(default_factory=lambda: tuple(
         u.strip() for u in os.getenv("NEWS_FEEDS", "").split(",") if u.strip()
@@ -120,6 +169,12 @@ class Settings:
                             "LLM atlanir, saf teknik+haber karari kullanilir.")
         if self.poll_interval_ms < 1000:
             warnings.append(f"POLL_INTERVAL_MS cok dusuk ({self.poll_interval_ms}ms).")
+        if self.signal_align not in ("candles", "ticks"):
+            errors.append(f"SIGNAL_ALIGN gecersiz: '{self.signal_align}' (candles|ticks)")
+        _known_iv = ("1m", "5m", "15m", "30m", "1h", "4h", "1d")
+        if self.signal_interval not in _known_iv:
+            warnings.append(f"SIGNAL_INTERVAL taninmiyor: '{self.signal_interval}' "
+                            "-> 1h varsayilir.")
         if self.news_poll_interval_s < 30:
             warnings.append(f"NEWS_POLL_INTERVAL_S cok dusuk ({self.news_poll_interval_s}s) "
                             "-> 30 sn'ye kirpilir (RSS rate-limit korumasi).")
@@ -127,6 +182,26 @@ class Settings:
             warnings.append("LIVE MOD: gercek fonla islem yapilabilir.")
         if self.risk.slippage_bps <= 0:
             warnings.append("risk.slippage_bps <= 0 -> slippage korumasi etkisiz.")
+        if not (0.0 <= self.risk.intel_block_score <= 1.0):
+            errors.append("INTEL_BLOCK_SCORE 0..1 olmali "
+                          f"(su an {self.risk.intel_block_score})")
+        if self.intel_refresh and self.intel_refresh_s < 60:
+            warnings.append(f"INTEL_REFRESH_S cok dusuk ({self.intel_refresh_s}s) "
+                            "-> 60 sn'ye kirpilir.")
+        if self.analyst_depth not in ("kisa", "normal", "derin", "cok_derin") \
+                and not self.analyst_depth.isdigit():
+            warnings.append(f"ANALYST_DEPTH taninmiyor: '{self.analyst_depth}' "
+                            "-> normal varsayilir.")
+        if self.hl_live and not self.hl_account_address \
+                and not os.getenv("HL_API_WALLET_KEY"):
+            warnings.append("HL_LIVE=1 ama HL imzalayicisi yok -> Hyperliquid "
+                            "KAGIT modda kalir (fail-safe).")
+        if self.hl_ai_autopilot and self.hl_live:
+            warnings.append("HL OTOPILOT + CANLI: AI gercek parayla pozisyon "
+                            "acabilir. HL_MAX_*/HL_AI_* tavanlarini gozden gecirin.")
+        if self.hl_ai_autopilot and self.llm_provider == "none":
+            warnings.append("HL_AI_AUTOPILOT=1 ama LLM kapali -> sezgisel gorusle "
+                            "islem ACILMAZ (otopilot etkisiz).")
         return errors, warnings
 
     def validate_or_raise(self) -> None:

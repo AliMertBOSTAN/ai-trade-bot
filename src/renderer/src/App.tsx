@@ -5,16 +5,35 @@ import EquityChart from './components/EquityChart'
 import TechnicalChart from './components/TechnicalChart'
 import MarketPanel from './components/MarketPanel'
 import NewsPanel from './components/NewsPanel'
+import CalendarPanel from './components/CalendarPanel'
+import RiskPanel from './components/RiskPanel'
 import AnalystPanel from './components/AnalystPanel'
 import ExplorePanel from './components/ExplorePanel'
 import SignalsView from './views/SignalsView'
 import StrategiesView from './views/StrategiesView'
 import ArbitrageView from './views/ArbitrageView'
 import TradesView from './views/TradesView'
+import IntelView from './views/IntelView'
+import HyperliquidView from './views/HyperliquidView'
 import PositionsTable from './components/PositionsTable'
 import ChainsPanel from './components/ChainsPanel'
 import PerformancePanel from './components/PerformancePanel'
-import { CHAIN_NAMES, TABS, TAB_HINTS, TRADE_THRESHOLD, usd, type Tab } from './lib/ui'
+import {
+  CHAIN_NAMES,
+  SECTIONS,
+  TAB_HINTS,
+  TRADE_THRESHOLD,
+  applyDensity,
+  loadDensity,
+  loadTab,
+  saveTab,
+  sectionOf,
+  tabsOf,
+  usd,
+  type Density,
+  type Section,
+  type Tab
+} from './lib/ui'
 import type { LivePreflight } from './api'
 import type {
   ArbitrageOpportunity,
@@ -48,10 +67,39 @@ export default function App(): JSX.Element {
   const [preflight, setPreflight] = useState<LivePreflight | null>(null)
   const [preflightModal, setPreflightModal] = useState(false)
   const [preflightBusy, setPreflightBusy] = useState(false)
+  // Live geçiş ayarları: ön-uçuş modalında düzenlenebilir risk limitleri
+  const [limitsForm, setLimitsForm] = useState<Record<string, string>>({})
+  const [limitsBusy, setLimitsBusy] = useState(false)
   const [walletInput, setWalletInput] = useState('')
   const [walletErr, setWalletErr] = useState('')
   const [wsStatus, setWsStatus] = useState<ConnStatus>('connecting')
-  const [tab, setTab] = useState<Tab>('overview')
+  // Sekme ve bölüm: son açık sekme localStorage'dan geri yüklenir; bölüm ondan türetilir.
+  const [tab, setTabState] = useState<Tab>(() => loadTab('overview'))
+  const [section, setSection] = useState<Section>(() => sectionOf(loadTab('overview')))
+  const [density, setDensity] = useState<Density>(() => loadDensity())
+
+  const setTab = useCallback((next: Tab): void => {
+    setTabState(next)
+    setSection(sectionOf(next))
+    saveTab(next)
+  }, [])
+
+  const pickSection = useCallback((next: Section): void => {
+    setSection(next)
+    const first = tabsOf(next)[0]
+    if (first) {
+      setTabState(first.id)
+      saveTab(first.id)
+    }
+  }, [])
+
+  const toggleDensity = useCallback((): void => {
+    setDensity((d) => {
+      const next: Density = d === 'compact' ? 'comfortable' : 'compact'
+      applyDensity(next)
+      return next
+    })
+  }, [])
   // İşlem eşiği backend'ten okunur (risk.min_confidence); sabit yazılmaz.
   const [tradeThreshold, setTradeThreshold] = useState<number>(TRADE_THRESHOLD)
   const { t, lang, setLang } = useI18n()
@@ -92,6 +140,11 @@ export default function App(): JSX.Element {
     } catch {
       /* gas opsiyonel */
     }
+  }, [])
+
+  useEffect(() => {
+    applyDensity(density)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -172,6 +225,17 @@ export default function App(): JSX.Element {
     }
   }
 
+  // Ön-uçuş limitlerini düzenleme formuna doldur (görünen eşik % olarak).
+  const fillLimitsForm = (p: LivePreflight): void =>
+    setLimitsForm({
+      min_confidence_pct: String(Math.round(p.limits.min_confidence * 100)),
+      max_position_usd: String(p.limits.max_position_usd),
+      max_daily_loss_usd: String(p.limits.max_daily_loss_usd),
+      max_gas_gwei: String(p.limits.max_gas_gwei),
+      slippage_bps: String(p.limits.slippage_bps),
+      daily_spend_limit_usd: String(p.limits.daily_spend_limit_usd)
+    })
+
   const switchMode = async (mode: 'paper' | 'live'): Promise<void> => {
     if (mode !== 'live') {
       await doSwitchMode(mode)
@@ -182,11 +246,43 @@ export default function App(): JSX.Element {
     try {
       const p = await api.livePreflight()
       setPreflight(p)
+      fillLimitsForm(p)
       setPreflightModal(true)
     } catch {
       pushLog('Ön kontrol alınamadı — engine çalışıyor mu?')
     } finally {
       setPreflightBusy(false)
+    }
+  }
+
+  // Düzenlenen limitleri kaydet → backend kırpar/kalıcılaştırır → raporu yenile.
+  const saveLimits = async (): Promise<void> => {
+    const num = (k: string): number | undefined => {
+      const raw = limitsForm[k]
+      if (raw == null || raw.trim() === '') return undefined
+      const v = Number(raw)
+      return Number.isFinite(v) ? v : undefined
+    }
+    const mcPct = num('min_confidence_pct')
+    setLimitsBusy(true)
+    try {
+      const r = await api.setRiskLimits({
+        ...(mcPct != null ? { min_confidence: mcPct / 100 } : {}),
+        max_position_usd: num('max_position_usd'),
+        max_daily_loss_usd: num('max_daily_loss_usd'),
+        max_gas_gwei: num('max_gas_gwei'),
+        slippage_bps: num('slippage_bps'),
+        daily_spend_limit_usd: num('daily_spend_limit_usd')
+      })
+      setTradeThreshold(Math.round(r.limits.min_confidence * 100))
+      const p = await api.livePreflight()
+      setPreflight(p)
+      fillLimitsForm(p)
+      pushLog('Live geçiş limitleri kaydedildi (kalıcı)')
+    } catch (e) {
+      pushLog(`Limit kaydı başarısız: ${(e as Error).message}`)
+    } finally {
+      setLimitsBusy(false)
     }
   }
 
@@ -245,6 +341,15 @@ export default function App(): JSX.Element {
           >
             🌐 {lang.toUpperCase()}
           </button>
+          {state.mode === 'paper' && (
+            <button
+              className="btn-ghost small"
+              onClick={() => setResetModal(true)}
+              title="Paper portföyü sıfırla — tutarı ve başlangıç türünü sen seç"
+            >
+              ↺ Sıfırla
+            </button>
+          )}
           <div className="seg" role="group" aria-label="İşlem modu">
             <button
               className={state.mode === 'paper' ? 'active' : ''}
@@ -281,8 +386,31 @@ export default function App(): JSX.Element {
         <Kpi label={t('kpi.gas')} value={ethGas ? `${ethGas.gwei} gwei` : '—'} />
       </section>
 
-      <nav className="tabs" role="tablist">
-        {TABS.map((tb) => (
+      <nav className="sections" role="tablist" aria-label="Bölümler">
+        {SECTIONS.map((sc) => (
+          <button
+            key={sc.id}
+            className={section === sc.id ? 'section-tab active' : 'section-tab'}
+            role="tab"
+            aria-selected={section === sc.id}
+            title={sc.hint}
+            onClick={() => pickSection(sc.id)}
+          >
+            {t(`sec.${sc.id}`)}
+          </button>
+        ))}
+        <span className="sections-sp" />
+        <button
+          className="density-btn"
+          onClick={toggleDensity}
+          title="Satır yüksekliğini ve boşlukları kısar — aynı ekrana daha çok veri sığar"
+        >
+          {density === 'compact' ? '⊟' : '⊞'} {t(`density.${density}`)}
+        </button>
+      </nav>
+
+      <nav className="tabs" role="tablist" aria-label="Paneller">
+        {tabsOf(section).map((tb) => (
           <button
             key={tb.id}
             className={tab === tb.id ? 'tab active' : 'tab'}
@@ -329,7 +457,15 @@ export default function App(): JSX.Element {
         {tab === 'strategies' && <StrategiesView active={tab === 'strategies'} />}
         {tab === 'arbitrage' && <ArbitrageView arbs={arbs} />}
         {tab === 'news' && <NewsPanel />}
+        {tab === 'calendar' && <CalendarPanel />}
+        {tab === 'risk' && <RiskPanel />}
         {tab === 'analyst' && <AnalystPanel />}
+        <div style={{ display: tab === 'intel' ? 'contents' : 'none' }}>
+          <IntelView active={tab === 'intel'} />
+        </div>
+        <div style={{ display: tab === 'hyperliquid' ? 'contents' : 'none' }}>
+          <HyperliquidView active={tab === 'hyperliquid'} />
+        </div>
         {tab === 'trades' && (
           <TradesView
             trades={trades}
@@ -411,13 +547,66 @@ export default function App(): JSX.Element {
                 </tbody>
               </table>
             </div>
-            <div className="muted small" style={{ marginTop: 8 }}>
-              Limitler: pozisyon ≤ ${preflight.limits.max_position_usd} · günlük zarar ≤ $
-              {preflight.limits.max_daily_loss_usd} · gas ≤ {preflight.limits.max_gas_gwei} gwei
-              · slippage {preflight.limits.slippage_bps / 100}% · günlük harcama{' '}
-              {preflight.limits.daily_spend_limit_usd > 0
-                ? `≤ $${preflight.limits.daily_spend_limit_usd}`
-                : 'LİMİTSİZ (MAX_DAILY_SPEND_USD önerilir)'}
+            <div style={{ marginTop: 10 }}>
+              <b>⚙ Live geçiş limitleri</b>{' '}
+              <span className="muted small">
+                (düzenlenebilir — kaydedince kalıcıdır ve hemen uygulanır)
+              </span>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: 8,
+                  marginTop: 6
+                }}
+              >
+                <LimitField
+                  label="Giriş eşiği (%)"
+                  hint="Bu güvenin altındaki sinyal pozisyon açamaz"
+                  value={limitsForm.min_confidence_pct ?? ''}
+                  onChange={(v) => setLimitsForm((f) => ({ ...f, min_confidence_pct: v }))}
+                />
+                <LimitField
+                  label="Pozisyon tavanı ($)"
+                  hint="Tek pozisyonun azami nosyoneli"
+                  value={limitsForm.max_position_usd ?? ''}
+                  onChange={(v) => setLimitsForm((f) => ({ ...f, max_position_usd: v }))}
+                />
+                <LimitField
+                  label="Günlük zarar limiti ($)"
+                  hint="Aşılırsa kill-switch: yeni işlem durur"
+                  value={limitsForm.max_daily_loss_usd ?? ''}
+                  onChange={(v) => setLimitsForm((f) => ({ ...f, max_daily_loss_usd: v }))}
+                />
+                <LimitField
+                  label="Gas tavanı (gwei)"
+                  hint="Üzerindeyken live işlem atlanır"
+                  value={limitsForm.max_gas_gwei ?? ''}
+                  onChange={(v) => setLimitsForm((f) => ({ ...f, max_gas_gwei: v }))}
+                />
+                <LimitField
+                  label="Slippage (bps)"
+                  hint="100 bps = %1 azami kayma"
+                  value={limitsForm.slippage_bps ?? ''}
+                  onChange={(v) => setLimitsForm((f) => ({ ...f, slippage_bps: v }))}
+                />
+                <LimitField
+                  label="Günlük harcama ($, 0=limitsiz)"
+                  hint="Gün içi toplam live alım hacmi tavanı"
+                  value={limitsForm.daily_spend_limit_usd ?? ''}
+                  onChange={(v) => setLimitsForm((f) => ({ ...f, daily_spend_limit_usd: v }))}
+                />
+              </div>
+              {Number(limitsForm.daily_spend_limit_usd) === 0 && (
+                <div className="muted small" style={{ marginTop: 4 }}>
+                  ⚠ Günlük harcama limiti kapalı — live için bir tavan önerilir.
+                </div>
+              )}
+              <div style={{ marginTop: 8 }}>
+                <button className="btn small" disabled={limitsBusy} onClick={() => void saveLimits()}>
+                  {limitsBusy ? '⏳ Kaydediliyor…' : '💾 Limitleri kaydet'}
+                </button>
+              </div>
             </div>
             <div className="modal-actions">
               <button className="btn" onClick={() => setPreflightModal(false)}>
@@ -808,6 +997,33 @@ function Overview({
         </button>
       </div>
     </>
+  )
+}
+
+function LimitField({
+  label,
+  hint,
+  value,
+  onChange
+}: {
+  label: string
+  hint?: string
+  value: string
+  onChange: (v: string) => void
+}): JSX.Element {
+  return (
+    <label title={hint}>
+      <span className="muted small" style={{ display: 'block', marginBottom: 2 }}>
+        {label}
+      </span>
+      <input
+        className="wallet-input"
+        style={{ width: '100%', boxSizing: 'border-box', margin: 0 }}
+        type="number"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
   )
 }
 

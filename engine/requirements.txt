@@ -9,3 +9,7 @@ httpx==0.27.0
 # LLM sağlayıcıları (opsiyonel - sadece hybrid/llm sinyal modunda gerekir)
 anthropic==0.34.0
 openai==1.40.0
+
+# Hyperliquid perp imzalama (OPSIYONEL — yalnizca CANLI emir icin gerekir).
+# Kurulu degilse kagit mod normal calisir, canli emir yolu kapali kalir.
+hyperliquid-python-sdk==0.24.0

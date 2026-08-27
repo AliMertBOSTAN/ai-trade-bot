@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import os
 import time
 
 from engine.config.settings import settings
@@ -112,6 +113,26 @@ def _market_context(binance_symbol: str | None) -> dict | None:
     except Exception:  # noqa: BLE001
         pass
     return ctx or None
+
+
+# --- Piyasa yapisi (intel) katmani -------------------------------------------
+# Makro + on-chain akis + Hyperliquid + smart-money panellerinin tek skoru.
+# ONEMLI: bu cagri AG YAPMAZ; arka planda tazelenen cache'i okur. Cache bossa
+# (test, ilk acilis, ag yok) notr doner ve karar hic degismez.
+_INTEL_SUPPORT_BONUS = 0.04   # yonle uyumlu guclu yapida guven artisi
+_INTEL_CONFLICT_CAP = 0.55    # yonle celisen guclu yapida guven tavani
+_INTEL_STRONG = 0.35          # "guclu" esigi (|skor|)
+
+
+def _intel_bias(base: str) -> dict:
+    """Yapisal bias (-1..+1). Hata/veri yok -> {"ok": False, "score": 0.0}."""
+    if os.getenv("INTEL_SIGNAL", "1").strip().lower() in ("0", "false", "no"):
+        return {"ok": False, "score": 0.0, "label": "kapali (INTEL_SIGNAL=0)"}
+    try:
+        from engine.marketdata.intel import bias as _bias
+        return _bias.combined(base)
+    except Exception:  # noqa: BLE001
+        return {"ok": False, "score": 0.0, "label": "veri yok"}
 
 
 def _clamp(x: float, lo: float = -1.0, hi: float = 1.0) -> float:
@@ -390,6 +411,29 @@ def generate_signal(chain_id: int, base: str, quote: str,
             pass
     confidence = _clamp(confidence, 0.0, 1.0)
 
+    # --- Piyasa yapisi (intel) katmani: makro rejim + on-chain akis + HL/whale.
+    # Yonle CELISEN guclu yapi guveni tavanlar; DESTEKLEYEN yapi kucuk bonus
+    # verir. Veri yoksa hicbir sey degismez (notr).
+    intel = _intel_bias(base)
+    intel_note = "yok"
+    if intel.get("ok") and action in ("BUY", "SELL"):
+        raw = float(intel.get("score") or 0.0)
+        aligned = raw if action == "BUY" else -raw
+        if aligned <= -_INTEL_STRONG:
+            before = confidence
+            confidence = min(confidence, _INTEL_CONFLICT_CAP)
+            intel_note = (f"yapi karara ters ({intel.get('label')}, {raw:+.2f}) "
+                          f"-> {before:.2f}->{confidence:.2f}")
+        elif aligned >= _INTEL_STRONG:
+            confidence = min(1.0, confidence + _INTEL_SUPPORT_BONUS)
+            intel_note = (f"yapi karari destekliyor ({intel.get('label')}, "
+                          f"{raw:+.2f}) +{_INTEL_SUPPORT_BONUS * 100:.0f}%")
+        else:
+            intel_note = f"yapi notr ({raw:+.2f})"
+    elif intel.get("ok"):
+        intel_note = f"yapi {float(intel.get('score') or 0.0):+.2f} (HOLD)"
+    confidence = _clamp(confidence, 0.0, 1.0)
+
     news_state = (f"haber {news['label']} ({news_score:+.2f}, {news['count']} baslik"
                   + (" - piyasa geneli" if news["market"] else "")
                   + (f", {fresh['count']} taze" if fresh["count"] else "")
@@ -419,6 +463,18 @@ def generate_signal(chain_id: int, base: str, quote: str,
         "mlProb": round(ml_prob, 3) if ml_prob is not None else None,
         "mtfNote": mtf_note,
         "mlNote": ml_note,
+        "intelScore": round(float(intel.get("score") or 0.0), 3),
+        "intelLabel": intel.get("label"),
+        "intelNote": intel_note,
+        "intelComponents": [
+            {"name": c.get("name"), "score": c.get("score"),
+             "detail": c.get("detail")}
+            for c in (intel.get("components") or [])
+        ] + [
+            {"name": c.get("name"), "score": c.get("score"),
+             "detail": c.get("detail")}
+            for c in (intel.get("symbol_components") or [])
+        ],
         "finalConfidence": round(confidence, 3),
     }
 

@@ -20,6 +20,7 @@ from typing import Any
 
 from engine.backtest.backtester import run_backtest
 from engine.config.settings import RiskConfig
+from engine.trading.exits import ExitConfig
 
 # CoinGecko id eşlemesi (yedek kaynak)
 COINGECKO_IDS = {
@@ -84,6 +85,25 @@ def main() -> None:
     p.add_argument("--min-confidence", type=float, default=0.60)
     p.add_argument("--stop", type=float, default=0.05)
     p.add_argument("--take", type=float, default=0.10)
+    p.add_argument("--exit-style", choices=["fixed", "atr"], default="fixed",
+                   help="fixed: sabit SL/TP · atr: canlı-eşdeğer (trailing+cooldown)")
+    p.add_argument("--trail-mult", type=float, default=2.5,
+                   help="ATR trailing stop çarpanı (exit-style=atr)")
+    p.add_argument("--atr-stop-mult", type=float, default=2.0,
+                   help="İlk ATR stop çarpanı (exit-style=atr)")
+    p.add_argument("--cooldown", type=int, default=0,
+                   help="Pozisyon kapanışı sonrası yeni alım için bekleme (bar)")
+    p.add_argument("--risk-pct", type=float, default=0.0,
+                   help="İşlem başına sermaye riski (örn. 0.01) — ATR boyut tavanı")
+    p.add_argument("--htf-filter", choices=["off", "ema"], default="off",
+                   help="Üst-TF (4x) EMA trendi aşağıyken yeni alım engelle")
+    p.add_argument("--allow-short", action="store_true",
+                   help="Çift yön: SELL sinyali pozisyon yokken SHORT açar "
+                        "(backtest/perp simülasyonu; spot DEX'te yapılamaz)")
+    p.add_argument("--min-edge", type=float, default=0.0,
+                   help="Beklenen hareket / tur maliyeti alt oranı (örn. 2.0; 0=kapalı)")
+    p.add_argument("--compare", action="store_true",
+                   help="Aynı veride fixed ve atr modlarını yan yana karşılaştır")
     p.add_argument("--save", default="", help="equity_curve'u bu JSON'a yaz")
     args = p.parse_args()
 
@@ -102,29 +122,65 @@ def main() -> None:
 
     base = args.symbol.upper().replace("USDT", "")
     risk = RiskConfig(min_confidence=args.min_confidence,
-                      stop_loss_pct=args.stop, take_profit_pct=args.take)
+                      stop_loss_pct=args.stop, take_profit_pct=args.take,
+                      min_edge_ratio=args.min_edge)
+    exit_cfg = ExitConfig(atr_stop_mult=args.atr_stop_mult,
+                          trail_mult=args.trail_mult)
 
-    r = run_backtest(candles, base, "USD", args.cash, risk)
+    def _run(style: str) -> dict:
+        return run_backtest(candles, base, "USD", args.cash, risk,
+                            args.interval, exit_style=style, exit_cfg=exit_cfg,
+                            cooldown_bars=args.cooldown, risk_pct=args.risk_pct,
+                            htf_filter=args.htf_filter,
+                            allow_short=args.allow_short)
 
     first, last = candles[0]["close"], candles[-1]["close"]
     buy_hold = (last - first) / first * 100
 
-    print("\n" + "=" * 52)
-    print(f"  BACKTEST  {base}/USD  ({len(candles)} mum, {args.source})")
-    print("=" * 52)
-    print(f"  Başlangıç fiyatı : {first:,.2f}")
-    print(f"  Bitiş fiyatı     : {last:,.2f}")
-    print(f"  İşlem sayısı     : {len(r['trades'])}")
-    print(f"  Toplam getiri    : {r['total_return_pct']:+.2f}%")
-    print(f"  Al-tut (buy&hold): {buy_hold:+.2f}%")
-    print(f"  Maks. düşüş      : {r['max_drawdown_pct']:.2f}%")
-    print(f"  Kazanma oranı    : {r['win_rate'] * 100:.1f}%")
-    print(f"  Sharpe (yıllık)  : {r['sharpe']:.2f}")
-    print(f"  Son equity       : ${r['final_equity_usd']:,.2f}")
-    print("=" * 52)
-    edge = r["total_return_pct"] - buy_hold
-    print(f"  Strateji al-tut'a karşı: {edge:+.2f}% "
-          f"({'üstün' if edge > 0 else 'altında'})")
+    if args.compare:
+        # Aynı veri üzerinde eski (fixed) ve yeni (atr) modu yan yana ölç.
+        a = _run("fixed")
+        b = _run("atr")
+        print("\n" + "=" * 64)
+        print(f"  KARŞILAŞTIRMA  {base}/USD  ({len(candles)} mum, "
+              f"al-tut {buy_hold:+.2f}%)")
+        print("=" * 64)
+        rows = [
+            ("Toplam getiri %", "total_return_pct", "+.2f"),
+            ("Maks. düşüş %", "max_drawdown_pct", ".2f"),
+            ("Kazanma oranı", "win_rate", ".2f"),
+            ("Profit factor", "profit_factor", ".2f"),
+            ("Sharpe (yıllık)", "sharpe", ".2f"),
+            ("Kapanan işlem", "num_closed_trades", "d"),
+            ("Son equity $", "final_equity_usd", ",.2f"),
+        ]
+        print(f"  {'Metrik':<18}{'fixed (eski)':>16}{'atr (yeni)':>16}")
+        for label, key, fmt in rows:
+            print(f"  {label:<18}{format(a[key], fmt):>16}{format(b[key], fmt):>16}")
+        print(f"  Çıkış dağılımı (atr): {b['exit_breakdown']}")
+        print("=" * 64)
+        r = b
+    else:
+        r = _run(args.exit_style)
+        print("\n" + "=" * 52)
+        print(f"  BACKTEST  {base}/USD  ({len(candles)} mum, {args.source}, "
+              f"exit={args.exit_style})")
+        print("=" * 52)
+        print(f"  Başlangıç fiyatı : {first:,.2f}")
+        print(f"  Bitiş fiyatı     : {last:,.2f}")
+        print(f"  İşlem sayısı     : {len(r['trades'])}")
+        print(f"  Toplam getiri    : {r['total_return_pct']:+.2f}%")
+        print(f"  Al-tut (buy&hold): {buy_hold:+.2f}%")
+        print(f"  Maks. düşüş      : {r['max_drawdown_pct']:.2f}%")
+        print(f"  Kazanma oranı    : {r['win_rate'] * 100:.1f}%")
+        print(f"  Sharpe (yıllık)  : {r['sharpe']:.2f}")
+        print(f"  Son equity       : ${r['final_equity_usd']:,.2f}")
+        if r.get("exit_breakdown"):
+            print(f"  Çıkış dağılımı   : {r['exit_breakdown']}")
+        print("=" * 52)
+        edge = r["total_return_pct"] - buy_hold
+        print(f"  Strateji al-tut'a karşı: {edge:+.2f}% "
+              f"({'üstün' if edge > 0 else 'altında'})")
 
     if args.save:
         with open(args.save, "w") as f:

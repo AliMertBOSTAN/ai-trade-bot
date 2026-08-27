@@ -1,17 +1,27 @@
-"""AI piyasa analisti — GRAFIK yorumu + kalabalik (haber/internet) al-sat egilimi.
+"""AI piyasa analisti — tüm istihbarat katmanını tek bağlamda okuyan analist.
 
-Bir varlik icin: grafik/teknik durumu (chart), CEX/DEX fiyat verisi (aggregator) ve
-guncel haber basliklarini (news = internetin son gundemi) toplar; LLM'e verip
-GRAFIGI yorumlatir ve haberlerden insanlarin AL mi SAT mi planladigini cikartir;
-net bir egilim (AL/SAT/BEKLE) uretir.
+Girdi olarak şunların HEPSİ verilir:
+  · grafik/teknik durum (chart + kural motoru sinyali)
+  · CEX/DEX fiyatı, emir defteri dengesizliği, spread
+  · türev tarafı (funding, OI değişimi, long/short, squeeze yönü)
+  · balina akışı (büyük emirler, defter duvarları)
+  · GÜNCEL HABER başlıkları
+  · **piyasa istihbaratı** (engine/marketdata/intel): makro rejim, risk-on/off,
+    korku endeksleri, Coinbase primi, ETF akışı, stablecoin likiditesi, sektör
+    rotasyonu, MVRV/maliyet tabanı, Hyperliquid konumlanması, smart-money
+  · Hyperliquid perp bağlamı (mark, funding, azami kaldıraç) — kaldıraçlı
+    işlem önerisi üretilebilsin diye
 
-LLM yoksa (.env: LLM_PROVIDER + API key) sezgisel fallback: teknik sinyal + haber
-sentiment'inden bias uretir (bot asla LLM'e bagimli kalmaz).
+Çıktı, işleme çevrilebilir yapıda bir JSON'dur: yön, güven, seviyeler,
+geçersizleşme noktası, senaryolar ve (istenirse) somut bir perp işlem planı.
+
+LLM yoksa sezgisel fallback devrede kalır — bot asla LLM'e bağımlı değildir.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 
 from engine.marketdata import (aggregator, chart, derivatives, news,
                                onchain, whales)
@@ -20,21 +30,76 @@ from engine.signals import llm
 
 log = logging.getLogger("marketdata.analyst")
 
+# Analiz derinliği: LLM'in üretebileceği azami token. Kısa bütçe uzun
+# gerekçeleri ortadan keser; bu yüzden UI'dan seçilebilir hale getirildi.
+DEPTHS: dict[str, int] = {
+    "kisa": 500,      # tek paragraf görüş
+    "normal": 1200,   # varsayılan — seviyeler + senaryolar
+    "derin": 2400,    # tam gerekçelendirme + işlem planı
+    "cok_derin": 4000,
+}
+DEFAULT_DEPTH = os.getenv("ANALYST_DEPTH", "normal")
+
+
+def depth_tokens(depth: str | None = None) -> int:
+    """Derinlik adını token bütçesine çevirir. Bilinmeyen ad -> normal."""
+    if depth and depth.isdigit():
+        return max(200, min(8000, int(depth)))
+    key = (depth or DEFAULT_DEPTH or "normal").strip().lower()
+    return DEPTHS.get(key, DEPTHS["normal"])
+
+
 SYSTEM_PROMPT = (
-    "Sen deneyimli bir kripto piyasa analistisin. Sana bir varligin GRAFIK/TEKNIK "
-    "durumu, CEX/DEX fiyat verisi ve GUNCEL HABER basliklari (internetin/kalabaligin "
-    "son gundemi) verilir. Gorevin iki bolumlu: (1) GRAFIGI yorumla (trend, momentum, "
-    "asiri alim/satim, donus sinyalleri). (2) Haberlerden kalabaligin AL mi SAT mi "
-    "planladigini cikar. Sonra ikisini birlestirip NET bir egilim ver: AL, SAT veya "
-    "BEKLE. SADECE su JSON semasinda yanit ver: "
-    '{"bias": "AL|SAT|BEKLE", "confidence": 0.0-1.0, '
-    '"sentiment": "BULLISH|BEARISH|NEUTRAL", '
-    '"chart_view": "grafik/teknik durumun 2-3 cumlelik yorumu", '
-    '"crowd_view": "haberlere gore insanlar AL mi SAT mi planliyor (1-2 cumle)", '
-    '"summary": "genel sonuc 1-2 cumle", '
-    '"risks": ["kisa risk maddeleri"]}. '
-    "Veri eksik/celiskili ise BEKLE ver ve confidence dusur. "
-    "Bu yatirim tavsiyesi DEGILDIR; veri/grafik yorumudur."
+    "Sen kurumsal bir kripto masasinda calisan kidemli piyasa analistisin. "
+    "Sana TEK bir varlik icin su katmanlar verilir: grafik/teknik, CEX/DEX "
+    "fiyat ve emir defteri, turev (funding/OI/long-short/squeeze), balina "
+    "akisi, guncel haberler, PIYASA ISTIHBARATI (makro rejim, risk-on/off, "
+    "korku endeksleri, Coinbase primi, ETF akisi, stablecoin likiditesi, "
+    "sektor rotasyonu, MVRV maliyet tabani, Hyperliquid konumlanmasi, "
+    "smart-money) ve varsa Hyperliquid perp baglami.\n\n"
+    "CALISMA KURALLARIN:\n"
+    "1. Once ZEMIN: makro rejim ve likidite kripto icin uygun mu? Zemin ters "
+    "ise teknik ne kadar guzel olursa olsun guveni dusur.\n"
+    "2. Sonra AKIS: ETF/stablecoin/smart-money/balina ayni yonu mu isaret "
+    "ediyor, celisiyor mu? Celiski varsa bunu acikca yaz.\n"
+    "3. Sonra YAPI: teknik seviyeler, trend, momentum, kirilma/donus.\n"
+    "4. Sonra KALABALIK: funding ve long/short kalabaligin nerede oldugunu "
+    "soyler. Kalabalik ASIRI tek yonluyse bu CONTRARIAN bir uyaridir.\n"
+    "5. En sonda karar. Katmanlar celisiyorsa BEKLE de ve nedenini yaz. "
+    "Emin olmadigin sayiyi UYDURMA; veri yoksa 'veri yok' de.\n\n"
+    "SADECE su JSON semasinda yanit ver, baska metin yazma:\n"
+    '{"bias":"AL|SAT|BEKLE","confidence":0.0-1.0,'
+    '"sentiment":"BULLISH|BEARISH|NEUTRAL",'
+    '"horizon":"saatlik|gunluk|haftalik",'
+    '"macro_view":"makro zemin ve likidite 1-2 cumle",'
+    '"flow_view":"ETF/stablecoin/balina/smart-money akisi 1-2 cumle",'
+    '"chart_view":"teknik yapi 2-3 cumle",'
+    '"crowd_view":"funding/long-short/haber kalabaligi 1-2 cumle",'
+    '"levels":{"support":[sayi,...],"resistance":[sayi,...],'
+    '"invalidation":sayi_veya_null},'
+    '"scenarios":[{"name":"kisa ad","probability":0.0-1.0,"note":"1 cumle"}],'
+    '"trade":{"venue":"hyperliquid","side":"LONG|SHORT|YOK",'
+    '"entry":sayi_veya_null,"stop":sayi_veya_null,"target":sayi_veya_null,'
+    '"leverage":tamsayi,"leverage_note":"kaldirac secim gerekcesi 1 cumle",'
+    '"size_hint_pct":0-100,"rationale":"1 cumle"},'
+    '"conflicts":["katmanlar arasi celiskiler"],'
+    '"risks":["kisa risk maddeleri"],'
+    '"summary":"karar gerekcesi 2-3 cumle"}\n\n'
+    "KALDIRAC SECIMI SENIN KARARIN. Sabit bir sayi verme; su kurallarla SEC:\n"
+    "  · Stop mesafesi belirleyicidir. Stop girise %X uzaksa kaldirac 1/X'ten "
+    "KUCUK olmali ki stop likidasyondan ONCE calissin. Ornek: stop %8 uzaksa "
+    "azami 5x degil, guvenli taraf 3x'tir.\n"
+    "  · Yuksek gerceklesmis oynaklik / genis ATR / dusuk likidite -> DUSUR.\n"
+    "  · Katmanlar (zemin+akis+yapi) ayni yonu gosteriyor ve guven yuksekse "
+    "ARTIR; celiski varsa 1-2x'te kal ya da YOK de.\n"
+    "  · Funding senin yonune karsi agir ise (LONG'ken pozitif ve yuksek) "
+    "tasima maliyeti artar -> DUSUR.\n"
+    "  · Bant: 1-10x. 1x = kaldiracsiz spot benzeri; sadece kurulum zayifken "
+    "ya da oynaklik asiriyken sec. Emin oldugun kurulumda 3-5x makuldur.\n"
+    "  · Likidasyona her zaman en az %12 mesafe kalsin.\n"
+    "leverage_note alaninda hangi kurali uyguladigini TEK cumleyle yaz.\n"
+    "trade.side 'YOK' ise diger trade alanlari null olabilir.\n"
+    "Bu yatirim tavsiyesi DEGILDIR; veri yorumudur."
 )
 
 
@@ -93,6 +158,89 @@ def _deriv_lines(deriv: dict) -> list[str]:
     return out
 
 
+def _intel_lines() -> list[str]:
+    """Piyasa istihbarati katmani — analiste ZEMIN bilgisi verir.
+
+    Cache'ten okunur (ag cagrisi yok). Veri yoksa satirlar atlanir; analist
+    o zaman yalnizca teknik/haber katmanlariyla calisir.
+    """
+    try:
+        from engine.marketdata.intel import bias as intel_bias
+        from engine.marketdata.intel.cache import peek
+    except Exception:  # noqa: BLE001
+        return []
+
+    out: list[str] = []
+    b = intel_bias.market_bias()
+    if b.get("ok"):
+        out += ["", "== PIYASA ISTIHBARATI (yapisal zemin) =="]
+        out.append(f"Birlesik yapi skoru: {b['score']:+.2f} ({b['label']}) "
+                   f"- {b['available']} bilesen")
+        for c in b.get("components", []):
+            out.append(f"  - {c['name']}: {c['score']:+.2f} | {c['detail']}")
+
+    def fresh(key: str) -> dict | None:
+        hit = peek(key)
+        if not hit or not isinstance(hit[0], dict) or hit[1] > 7200:
+            return None
+        return hit[0]
+
+    roo = fresh("macro:riskonoff")
+    if roo and roo.get("ok"):
+        out.append(f"Risk modu: {roo['mode']} ({roo['score']}/100, "
+                   f"{roo.get('positive')} olumlu / {roo.get('negative')} olumsuz)")
+    idx = fresh("macro:indices")
+    if idx and idx.get("ok"):
+        parts = [f"{r['symbol']} {r['value']} ({r['change_pct']:+.2f}%)"
+                 for r in idx["rows"][:6]
+                 if r.get("ok") and r.get("change_pct") is not None]
+        if parts:
+            out.append("Makro zemin: " + " | ".join(parts))
+    st = fresh("llama:stables")
+    if st and st.get("ok"):
+        out.append(f"Stablecoin arzi 30g: {st.get('change_30d_pct')}% "
+                   f"({st.get('note')})")
+    et = fresh("etf:bitcoin")
+    if et and et.get("ok"):
+        out.append(f"ETF akisi ({et.get('source')}): {et.get('note')}")
+    ux = fresh("utxo:realized")
+    if ux and ux.get("ok"):
+        out.append(f"BTC MVRV {ux.get('mvrv')} - {ux.get('zone')}; "
+                   f"gerceklesmis fiyat {ux.get('realized_price')}")
+    sec = fresh("rotation:sectors")
+    if sec and sec.get("ok"):
+        inn = ", ".join(r["sector"] for r in (sec.get("inflow") or [])[:3])
+        outt = ", ".join(r["sector"] for r in (sec.get("outflow") or [])[:3])
+        if inn or outt:
+            out.append(f"Sektor rotasyonu: GIRIS [{inn}] / CIKIS [{outt}]")
+    sm = fresh("flows:smartmoney")
+    if sm and sm.get("ok"):
+        out.append(f"Smart money ({sm.get('source')}) genel skor "
+                   f"{sm.get('score'):+.2f}")
+    hls = fresh("hl:sentiment")
+    if hls and hls.get("ok"):
+        out.append(f"Hyperliquid geneli: {hls.get('label')} | agirlikli funding "
+                   f"{hls.get('weighted_funding_pct')}%/sa | genislik "
+                   f"%{hls.get('breadth_pct')}")
+    return out
+
+
+def _hl_lines(symbol: str) -> list[str]:
+    """Hyperliquid perp baglami — kaldiracli islem onerisi icin sart."""
+    try:
+        from engine.trading.hl_broker import normalize_symbol, universe
+        u = universe().get(normalize_symbol(symbol))
+    except Exception:  # noqa: BLE001
+        return []
+    if not u:
+        return []
+    return ["", "== HYPERLIQUID PERP ==",
+            f"Mark {u['mark']:.4f} | saatlik funding {u['funding_hourly'] * 100:+.5f}% "
+            f"| azami kaldirac {u['max_leverage']}x",
+            f"Acik pozisyon {u['open_interest_usd']:,.0f}$ | 24s hacim "
+            f"{u['day_volume_usd']:,.0f}$"]
+
+
 def _build_prompt(symbol: str, snap: dict, feed: dict, headlines: list[dict],
                   whale: dict | None = None, deriv: dict | None = None) -> str:
     lines = [f"VARLIK: {symbol.upper()}", ""]
@@ -123,7 +271,11 @@ def _build_prompt(symbol: str, snap: dict, feed: dict, headlines: list[dict],
     else:
         lines.append("(haber akisina ulasilamadi)")
 
-    lines += ["", "Grafigi yorumla, kalabaligin al/sat egilimini cikar, JSON ver."]
+    lines += _intel_lines()
+    lines += _hl_lines(symbol)
+
+    lines += ["", "Katmanlari yukaridaki sirayla (zemin -> akis -> yapi -> "
+              "kalabalik) degerlendir ve SADECE JSON ver."]
     return "\n".join(lines)
 
 
@@ -153,19 +305,35 @@ def _heuristic(feed: dict, sent: dict, whale: dict | None = None,
              + ("Buyuk emirler ALIM tarafinda." if wscore > 0.15
                 else "Buyuk emirler SATIM tarafinda." if wscore < -0.15
                 else "Balinada net yon yok.") + deriv_txt)
+    intel_txt = ""
+    try:
+        from engine.marketdata.intel import bias as _ib
+        b = _ib.market_bias()
+        if b.get("ok"):
+            intel_txt = (f" Yapisal zemin: {b['label']} ({b['score']:+.2f}, "
+                         f"{b['available']} bilesen).")
+    except Exception:  # noqa: BLE001
+        pass
     return {
         "bias": bias,
         "confidence": round(float(sig.get("confidence", 0.5)), 2),
         "sentiment": "BULLISH" if action == "BUY" else "BEARISH" if action == "SELL" else "NEUTRAL",
         "chart_view": sig.get("rationale", "grafik verisi sinirli"),
         "crowd_view": crowd,
-        "summary": f"Teknik {action}, haber tonu {label} -> egilim: {bias}.",
+        "macro_view": intel_txt.strip() or "istihbarat verisi yok",
+        "flow_view": whale_txt,
+        "trade": {"venue": "hyperliquid", "side": "YOK", "leverage": 1,
+                  "leverage_note": "LLM kapali - kaldirac karari uretilmedi",
+                  "rationale": "LLM kapali - otomatik islem plani uretilmedi"},
+        "summary": (f"Teknik {action}, haber tonu {label} -> egilim: {bias}."
+                    + intel_txt),
         "risks": ["Sezgisel ozet (LLM kapali); dogrulama icin grafigi inceleyin."],
         "heuristic": True,
     }
 
 
-def analyze(symbol: str, news_query: str | None = None) -> dict:
+def analyze(symbol: str, news_query: str | None = None,
+            depth: str | None = None) -> dict:
     """Tam analiz: grafik + CEX/DEX + haberler + (LLM veya sezgisel) al/sat egilimi."""
     snap = aggregator.snapshot(symbol)
     try:
@@ -203,8 +371,13 @@ def analyze(symbol: str, news_query: str | None = None) -> dict:
         "llm_used": False,
     }
 
-    text = llm.complete(SYSTEM_PROMPT, _build_prompt(symbol, snap, feed, headlines, whale, deriv),
-                        max_tokens=600)
+    max_tokens = depth_tokens(depth)
+    report["depth"] = depth or DEFAULT_DEPTH
+    report["max_tokens"] = max_tokens
+    text = llm.complete(
+        SYSTEM_PROMPT,
+        _build_prompt(symbol, snap, feed, headlines, whale, deriv),
+        max_tokens=max_tokens)
     if text:
         parsed = _parse(text)
         if parsed:

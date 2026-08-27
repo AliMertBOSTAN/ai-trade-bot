@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hedef &amp; Risk paneli — önizleme</title>
+<!--
+  BAĞIMSIZ ÖNİZLEME. Bu dosya derleme gerektirmez, çift tıklayıp tarayıcıda
+  açabilirsin. İçindeki sayılar UYDURMA DEĞİL: 2026-08-02'de gerçek Binance
+  verisiyle (1000 mum, 4h) ve gerçek Base mainnet quote'uyla ölçüldü.
+
+  Gerçek panel: src/renderer/src/components/RiskPanel.tsx (Electron içinde
+  engine'in /goal, /leverage, /leverage/sweep uçlarından canlı veri çeker).
+-->
+<style>
+  :root{
+    --bg:#07090f; --panel:rgba(19,24,36,.88); --panel2:#1a2030;
+    --border:rgba(255,255,255,.07); --border-hover:rgba(106,166,255,.25);
+    --text:#e2e8f3; --muted:#6b7689; --pos:#34d399; --neg:#fb7185;
+    --accent:#6aa6ff; --live:#fbbf24; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:24px; background:var(--bg); color:var(--text);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background-image:radial-gradient(1200px 600px at 15% -10%,rgba(78,124,255,.07),transparent),
+                     radial-gradient(900px 500px at 90% 0%,rgba(45,212,191,.05),transparent);
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+  .banner{
+    border:1px solid var(--border); border-left:3px solid var(--live);
+    border-radius:var(--radius); background:var(--panel);
+    padding:11px 14px; margin-bottom:18px; font-size:12.5px; color:var(--muted);
+  }
+  .card{
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:var(--radius); padding:17px 19px; margin-bottom:16px;
+  }
+  .card h3{margin:0 0 4px; font-size:15px; letter-spacing:-.2px}
+  .card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:16px 0}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);
+       padding:13px 15px;position:relative;overflow:hidden}
+  .kpi::before{content:'';position:absolute;inset:0 auto 0 0;width:3px;
+       background:linear-gradient(180deg,var(--accent),transparent);opacity:.7}
+  .kpi-label{color:var(--muted);font-size:10px;text-transform:uppercase;
+       letter-spacing:.9px;font-weight:700}
+  .kpi-value{display:block;font-size:20px;font-weight:800;margin-top:6px;
+       letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+  .ok{color:var(--pos)} .warn{color:#e0a63b} .bad{color:var(--neg)}
+  .alert{border:1px solid var(--border);border-left-width:3px;border-radius:var(--radius);
+       background:var(--panel2);padding:11px 14px;margin:12px 0;font-size:13px}
+  .alert.ok{border-left-color:var(--pos)} .alert.warn{border-left-color:#e0a63b}
+  .alert.bad{border-left-color:var(--neg)}
+  .muted{color:var(--muted)} .small{font-size:12px}
+  .btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);
+       border-radius:10px;padding:7px 13px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:var(--border-hover)}
+  .input{background:var(--panel2);border:1px solid var(--border);color:inherit;
+       border-radius:10px;padding:7px 10px;font-size:13px;font-variant-numeric:tabular-nums}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+  th{text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;
+     letter-spacing:.9px;font-weight:700;padding:7px 10px;border-bottom:1px solid var(--border)}
+  td{padding:8px 10px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  tr.liq td{background:rgba(251,113,133,.08)}
+  .row-note{margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="banner">
+    <b>Bağımsız önizleme</b> — gerçek panel Electron içinde engine'den canlı veri çeker.
+    Buradaki sayılar 2 Ağustos 2026'da gerçek Binance verisi (1000 mum · 4h) ve
+    gerçek Base mainnet quote'uyla ölçüldü.
+  </div>
+
+  <!-- ---------------------------------------------------------- HEDEF -->
+  <div class="card">
+    <div class="card-head">
+      <h3>Hedef</h3>
+      <div style="display:flex;gap:8px">
+        <input class="input" type="number" value="420000" style="width:120px" aria-label="Hedef tutar (USD)" />
+        <input class="input" type="number" value="24" style="width:70px" aria-label="Ufuk (ay)" />
+        <button class="btn">Kaydet</button>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><span class="kpi-label">Mevcut</span><span class="kpi-value">$100,00</span></div>
+      <div class="kpi"><span class="kpi-label">Hedef</span><span class="kpi-value">$420.000</span></div>
+      <div class="kpi"><span class="kpi-label">Gereken çarpan</span><span class="kpi-value bad">4.200×</span></div>
+      <div class="kpi"><span class="kpi-label">Gereken yıllık</span><span class="kpi-value bad">6.381%</span></div>
+      <div class="kpi"><span class="kpi-label">Gereken günlük</span><span class="kpi-value bad">1,149%</span></div>
+      <div class="kpi"><span class="kpi-label">Ölçülen yıllık</span><span class="kpi-value muted">—</span></div>
+    </div>
+
+    <div class="alert bad">
+      Gerçekçilik: <b>gerçekçi değil</b> — Sürdürülebilir bir örneği yok; bu oran hedef değil kumar bahsidir.
+    </div>
+
+    <div class="muted small">
+      İlerleme: %0,0238 · Kalan süre: 2,00 yıl · Gereken aylık ekleme: $15.251,83 ·
+      %15/yıl varsayımıyla varış: 59,7 yıl
+    </div>
+    <div class="muted small row-note">⚠️ Gereken yıllık getiri %6.381 — sürdürülebilir bir örneği yok. Ufku uzatmayı veya hedefi düşürmeyi düşünün.</div>
+    <div class="muted small">⚠️ Hedef, mevcut sermayenin 4.200 katı. Küçük sermayede bu çarpanlar ancak tek seferlik büyük şansla olur; bot bunu hedefleyecek şekilde AYARLANMAZ.</div>
+    <div class="muted small">⚠️ Bu rapor bilgilendirme amaçlıdır; bot risk ayarlarını hedefe göre DEĞİŞTİRMEZ ve yatırım tavsiyesi değildir.</div>
+  </div>
+
+  <!-- ------------------------------------------------------ KALDIRAÇ -->
+  <div class="card">
+    <h3>Kaldıraç kararı (Kelly)</h3>
+    <div class="kpis">
+      <div class="kpi"><span class="kpi-label">Kaldıraç</span><span class="kpi-value ok">1,00×</span></div>
+      <div class="kpi"><span class="kpi-label">Kelly kesri</span><span class="kpi-value">0,000</span></div>
+      <div class="kpi"><span class="kpi-label">Likidasyon mesafesi</span><span class="kpi-value">99,5%</span></div>
+      <div class="kpi"><span class="kpi-label">İflas olasılığı</span><span class="kpi-value bad">100,00%</span></div>
+      <div class="kpi"><span class="kpi-label">Ölçülen işlem</span><span class="kpi-value">6</span></div>
+      <div class="kpi"><span class="kpi-label">Net PnL</span><span class="kpi-value bad">−$2,69</span></div>
+    </div>
+    <div class="muted small">
+      Gerekçe: yetersiz örnek — 6 &lt; 30 kapanan işlem, kenar ölçülemedi, kaldıraç açılmaz ·
+      1× long'da likidasyon yoktur
+    </div>
+    <div class="muted small">
+      Ölçülen: 6 işlem · kazanma %0 · kazanç/kayıp 0,0 · net −$2,69
+    </div>
+    <div class="alert bad">
+      Hedef 4.200× — kenarsız piyasada ulaşma olasılığının üst sınırı
+      <b>1 / 4.200</b> (%0,0238). Bu sınır <b>kaldıraçla değişmez</b>
+      (optional stopping theorem).
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------ KALDIRAÇ TARAMA -->
+  <div class="card">
+    <div class="card-head">
+      <h3>Kaldıraç taraması — BTCUSDT 4h (kaldıraçsız spot +3,93%)</h3>
+      <button class="btn">Taramayı çalıştır</button>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Kaldıraç</th><th>Getiri</th><th>Maks. düşüş</th><th>Funding</th><th>Komisyon</th><th>Durum</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1×</td><td class="ok">+1,27%</td><td>5,2%</td><td class="muted">1,97%</td><td class="muted">0,63%</td><td>ayakta</td></tr>
+        <tr><td><b>2×</b></td><td class="ok"><b>+1,79%</b></td><td>10,2%</td><td class="muted">3,93%</td><td class="muted">1,26%</td><td>ayakta ← en iyi</td></tr>
+        <tr><td>3×</td><td class="ok">+1,54%</td><td>15,0%</td><td class="muted">5,89%</td><td class="muted">1,89%</td><td>ayakta</td></tr>
+        <tr><td>5×</td><td class="bad">−1,18%</td><td>24,1%</td><td class="muted">9,82%</td><td class="muted">3,15%</td><td>ayakta</td></tr>
+        <tr><td>10×</td><td class="bad">−19,04%</td><td>45,1%</td><td class="muted">19,65%</td><td class="muted">6,30%</td><td>ayakta</td></tr>
+        <tr><td>20×</td><td class="bad">−69,84%</td><td>78,4%</td><td class="muted">39,30%</td><td class="muted">12,60%</td><td>ayakta</td></tr>
+        <tr class="liq"><td>50×</td><td class="bad">−100,00%</td><td>98,7%</td><td class="muted">32,00%</td><td class="muted">31,50%</td><td class="bad">LİKİDE (bar 339)</td></tr>
+      </tbody>
+    </table>
+    <div class="muted small row-note">
+      Geçmişte en iyi: <b>2,0×</b> (+1,79%) · İlk likide olan: 50×<br />
+      Kaldıraç kenarı ÇARPAR; kenar yoksa çarpım da yoktur. Likidasyon mutlak
+      bariyerdir — bir kez değince geri dönüş yok.
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------ KANIT KAPISI -->
+  <div class="card">
+    <h3>Kanıt kapısı — canlıya geçiş</h3>
+    <div class="muted small" style="margin-bottom:10px">
+      Bot, paper/shadow modda ölçülebilir kenar göstermeden gerçek parayla işlem yapamaz.
+    </div>
+    <table>
+      <thead><tr><th>Kontrol</th><th>Eşik</th><th>Şu an</th><th>Durum</th></tr></thead>
+      <tbody>
+        <tr><td>Kapanan işlem</td><td>≥ 30</td><td>6</td><td class="bad">✗</td></tr>
+        <tr><td>Net PnL</td><td>&gt; $0</td><td>−$2,69</td><td class="bad">✗</td></tr>
+        <tr><td>Profit factor</td><td>≥ 1,20</td><td>0,00</td><td class="bad">✗</td></tr>
+        <tr><td>Maks. düşüş</td><td>≤ %15</td><td>%3,25</td><td class="ok">✓</td></tr>
+        <tr><td>Base DEX rotası</td><td>quote gelmeli</td><td>USDC→WETH · 12,2 bps</td><td class="ok">✓</td></tr>
+        <tr class="liq"><td>İmzalı perp emir yolu</td><td>kurulmalı</td><td>kurulmadı</td><td class="bad">✗</td></tr>
+      </tbody>
+    </table>
+    <div class="alert warn row-note">
+      Bugün canlı işlem <b>yalnızca Base spot, kaldıraç 1×</b> üzerinden yapılır.
+      Kaldıraçlı canlı emir üç kapının arkasında: kanıt kapısı +
+      <code>LEVERAGE_ENABLED=1</code> + <code>LEVERAGE_MAX</code>.
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

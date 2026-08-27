@@ -2501,3 +2501,1104 @@ input:focus-visible {
   display: flex;
   gap: 8px;
 }
+
+/* ==========================================================================
+   Hedef & Risk paneli (RiskPanel) + Takvim/Araştırma paneli ortak öğeleri
+   ========================================================================== */
+
+/* KPI değeri — .kpi-val ile aynı ölçek, durum renkleri .ok/.warn/.bad ile */
+.kpi-value {
+  display: block;
+  font-size: 21px;
+  font-weight: 800;
+  margin-top: 7px;
+  letter-spacing: -0.4px;
+}
+
+/* Durum renkleri (panellerde metin/rozet/satır vurgusu) */
+.ok { color: var(--pos); }
+.warn { color: #e0a63b; }
+.bad { color: var(--neg); }
+
+/* Uyarı/bilgi şeridi */
+.alert {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 11px 14px;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.alert.ok { border-left-color: var(--pos); }
+.alert.warn { border-left-color: #e0a63b; }
+.alert.bad { border-left-color: var(--neg); }
+
+/* Sayısal tablo (kaldıraç taraması) */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 10px;
+}
+.table th {
+  text-align: left;
+  color: var(--muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  font-weight: 700;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+.table tr:last-child td { border-bottom: none; }
+.table tr.bad td { background: color-mix(in srgb, var(--neg) 8%, transparent); }
+
+/* Sayı girişi (hedef tutarı / ufuk) */
+.input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: inherit;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ============================================================================
+   Piyasa İstihbaratı (intel) — widget ızgarası ve ortak parçalar.
+   Mevcut .card/.tbl/.pos/.neg dilini kullanır; yalnız intel'e özgü olanlar
+   burada tanımlanır (i- öneki).
+   ========================================================================= */
+.iheader .igroups {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.iwidget-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.iwidget .card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.iwidget h3 {
+  cursor: help;
+}
+
+.isrc {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.isrc.warn {
+  color: var(--live);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.iempty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 14px 2px;
+  line-height: 1.45;
+}
+.iempty.small {
+  padding: 6px 0;
+  font-size: 11px;
+}
+.iempty-ico {
+  opacity: 0.5;
+}
+
+.ifoot {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: #93a2b8;
+  line-height: 1.5;
+}
+.ifoot.warn {
+  color: var(--live);
+}
+.ifoot code {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10.5px;
+}
+.ih4 {
+  margin: 14px 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9fb0c9;
+}
+
+/* ---- satır / KPI ---- */
+.ilist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.iscroll {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.irow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.irow:last-child {
+  border-bottom: 0;
+}
+.irow-l {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.irow-sub {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.irow-v {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.istats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+.istat-l {
+  font-size: 10.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.istat-v {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.istat-s {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.igrid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 900px) {
+  .igrid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- sparkline & ölçekler ---- */
+.ispark .sp-pos {
+  stroke: var(--pos);
+}
+.ispark .sp-neg {
+  stroke: var(--neg);
+}
+.igauge {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  margin: 6px 0;
+}
+.igauge-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--muted);
+}
+.igauge.pos .igauge-fill {
+  background: var(--pos);
+}
+.igauge.neg .igauge-fill {
+  background: var(--neg);
+}
+.igauge.neu .igauge-fill {
+  background: var(--live);
+}
+.igauge-mark {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.ibias {
+  position: relative;
+  height: 6px;
+  flex: 1;
+  min-width: 60px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.ibias-zero {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 1px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.ibias-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 999px;
+}
+.ibias-fill.pos {
+  background: var(--pos);
+}
+.ibias-fill.neg {
+  background: var(--neg);
+}
+.ibias-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.ibias-num {
+  font-size: 30px;
+  font-weight: 700;
+  min-width: 88px;
+}
+
+/* ---- korku endeksi kartları ---- */
+.ifng {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.ifng-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.ifng-t {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.ifng-v {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.ifng-l {
+  font-size: 11px;
+  color: #93a2b8;
+}
+.ifng-chg {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  margin: 4px 0 2px;
+}
+
+/* ---- risk modu ---- */
+.irisk-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.irisk-score {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1;
+}
+.irisk-meta {
+  flex: 1;
+}
+
+/* ---- korelasyon / skor satırı ---- */
+.icorr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.icorr-s {
+  min-width: 92px;
+  color: #cbd5e6;
+}
+.icorr-v {
+  min-width: 56px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.icorr-d {
+  flex: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+/* ---- akış çubukları (sektör rotasyonu) ---- */
+.iflow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.iflow-n {
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.iflow-bar {
+  flex: 1;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.iflow-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+.iflow-fill.pos {
+  background: var(--pos);
+}
+.iflow-fill.neg {
+  background: var(--neg);
+}
+.iflow-v {
+  min-width: 76px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.iflow-p {
+  min-width: 58px;
+  text-align: right;
+  font-size: 11px;
+}
+
+/* ---- long/short dağılım çubuğu ---- */
+.ilong {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.ilong-s {
+  min-width: 62px;
+}
+.ilong-bar {
+  flex: 1;
+  display: flex;
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+.ilong-l {
+  background: var(--pos);
+}
+.ilong-r {
+  background: var(--neg);
+}
+.ilong-v {
+  min-width: 78px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ilong-w {
+  min-width: 66px;
+  text-align: right;
+  font-size: 11px;
+}
+
+/* ---- etiket öbekleri ---- */
+.ichips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ichip {
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: #b9c6da;
+}
+.ichip b {
+  color: var(--text);
+}
+
+/* ============================================================================
+   Bölüm navigasyonu (İzle / Karar / İşlem) + yoğunluk modu
+   ========================================================================= */
+.sections {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 14px 0 0;
+  padding-bottom: 2px;
+}
+.sections-sp {
+  flex: 1;
+}
+.section-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--muted);
+  font: 600 12px/1 'Inter', sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.section-tab:hover {
+  color: var(--text);
+}
+.section-tab.active {
+  color: #07090f;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.density-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.density-btn:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+
+/* --- yoğun mod: satırları ve boşlukları kıs --- */
+html[data-density='compact'] body {
+  font-size: 12px;
+}
+html[data-density='compact'] .card {
+  padding: 10px 12px;
+  min-height: 0;
+}
+html[data-density='compact'] .card h3 {
+  margin-bottom: 8px;
+}
+html[data-density='compact'] .grid,
+html[data-density='compact'] .dashgrid {
+  gap: 10px;
+}
+html[data-density='compact'] .kpis {
+  gap: 10px;
+}
+html[data-density='compact'] .kpi {
+  padding: 8px 12px;
+}
+html[data-density='compact'] .kpi-val,
+html[data-density='compact'] .kpi-value {
+  font-size: 17px;
+}
+html[data-density='compact'] .tbl th,
+html[data-density='compact'] .tbl td {
+  padding: 4px 8px;
+  font-size: 11.5px;
+}
+html[data-density='compact'] .irow {
+  padding: 2px 0;
+}
+html[data-density='compact'] .istats {
+  gap: 12px;
+  margin-bottom: 6px;
+}
+html[data-density='compact'] .istat-v {
+  font-size: 16px;
+}
+html[data-density='compact'] .ifng-v,
+html[data-density='compact'] .irisk-score {
+  font-size: 24px;
+}
+html[data-density='compact'] .ibias-num {
+  font-size: 22px;
+}
+html[data-density='compact'] .tabs .tab {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+html[data-density='compact'] .section-tab {
+  padding: 6px 13px;
+}
+html[data-density='compact'] .tab-hint {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+html[data-density='compact'] .ih4 {
+  margin: 8px 0 4px;
+}
+
+/* ============================================================================
+   Sembol arama (AI Analist) + Hyperliquid emir masası
+   ========================================================================= */
+.sym-picker {
+  position: relative;
+  min-width: 220px;
+}
+.sym-list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.8);
+}
+.sym-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 7px 11px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+}
+.sym-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.sym-s {
+  font-weight: 600;
+  min-width: 62px;
+}
+.sym-lev {
+  font-size: 10.5px;
+  color: var(--accent);
+  border: 1px solid rgba(106, 166, 255, 0.3);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.sym-v {
+  flex: 1;
+  text-align: right;
+  font-size: 11px;
+}
+.sym-src {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sym-empty {
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.depth-seg button {
+  font-size: 11.5px;
+}
+.trade-plan {
+  border-color: rgba(106, 166, 255, 0.3);
+}
+.callout.warn {
+  border-left-color: var(--live);
+}
+
+/* --- HL emir formu --- */
+.hl-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hl-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.hl-form select,
+.hl-form .input {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.hl-form select:focus,
+.hl-form .input:focus {
+  outline: none;
+  border-color: var(--border-hover);
+}
+.hl-form input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.hl-preview {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.hl-preview.blocked {
+  border-color: rgba(251, 113, 133, 0.35);
+}
+.hl-submit {
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px;
+  font-weight: 600;
+}
+.hl-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pill.warn {
+  color: var(--live);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+.pill.pos {
+  color: var(--pos);
+  border-color: rgba(52, 211, 153, 0.4);
+}
+.pill.neg {
+  color: var(--neg);
+  border-color: rgba(251, 113, 133, 0.4);
+}
+
+/* --- AI karar satırı --- */
+.ai-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+}
+.ai-sym {
+  font-weight: 600;
+  min-width: 56px;
+}
+.ai-trig {
+  font-size: 10.5px;
+  min-width: 96px;
+}
+.ai-sum {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #b9c6da;
+}
+.ai-t {
+  font-size: 10.5px;
+  min-width: 62px;
+  text-align: right;
+}
+html[data-density='compact'] .hl-form {
+  gap: 7px;
+}
+html[data-density='compact'] .ai-row {
+  padding: 3px 0;
+}
+
+/* ============================================================================
+   Hyperliquid işlem masası — iki sütunlu yerleşim + piyasa listesi
+   `.content` düz blok olduğu için ızgara burada kuruluyor.
+   ========================================================================= */
+.hl-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* Piyasa listesi + emir formu tek satir; yapiskan liste bu satirin sonunda
+   durur (sticky, iceren bloguna gore hesaplanir). */
+.hl-top {
+  display: grid;
+  grid-template-columns: minmax(368px, 440px) 1fr;
+  gap: 14px;
+  align-items: start;
+}
+/* Piyasa listesi kaydırırken sabit kalır. `top` degeri yapiskan topbar'in
+   altina denk gelmeli, yoksa kart baslik satiri topbar'in ardina kayar. */
+.hl-markets {
+  position: sticky;
+  top: 68px;
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+}
+html[data-density='compact'] .hl-markets {
+  top: 60px;
+  max-height: calc(100vh - 84px);
+}
+@media (max-width: 1100px) {
+  .hl-top {
+    grid-template-columns: 1fr;
+  }
+  .hl-markets {
+    position: static;
+    max-height: none;
+  }
+}
+
+/* --- piyasa listesi --- */
+.hl-sort {
+  margin: 8px 0;
+}
+.hl-sort button {
+  font-size: 11px;
+  padding: 4px 9px;
+}
+.hl-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.hl-mkt {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 54px 58px 54px 30px;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 7px 9px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+/* Sütunlar taşmasın: uzun sayılar kırpılır, satır kaymaz. */
+.hl-mkt > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hl-mkt:last-child {
+  border-bottom: 0;
+}
+.hl-mkt:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.hl-mkt.on {
+  background: rgba(106, 166, 255, 0.14);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.hl-mkt-s {
+  font-weight: 600;
+}
+.hl-mkt-p {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.hl-mkt-c,
+.hl-mkt-f,
+.hl-mkt-v {
+  text-align: right;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.hl-mkt-l {
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.hl-block {
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(251, 113, 133, 0.12);
+  color: var(--neg);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.hl-uni-err p {
+  margin: 6px 0 10px;
+  font-size: 12.5px;
+}
+
+/* --- seçili piyasa künyesi --- */
+.hl-ticker {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.hl-ticker-s {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.hl-ticker-p {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.hl-ticker-c {
+  font-size: 13px;
+  font-weight: 600;
+}
+.hl-ticker-m {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.hl-ticker-m b {
+  font-size: 12.5px;
+}
+
+.hl-side {
+  margin-bottom: 12px;
+}
+.hl-side button {
+  flex: 1;
+  padding: 9px;
+  font-weight: 600;
+}
+.hl-pcts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hl-submit.long {
+  background: linear-gradient(180deg, #2fbe86, #22a06f);
+  border-color: #22a06f;
+  color: #04120c;
+}
+.hl-submit.short {
+  background: linear-gradient(180deg, #f2748a, #d95772);
+  border-color: #d95772;
+  color: #16060a;
+}
+.hl-submit:disabled {
+  background: var(--panel2);
+  border-color: var(--border);
+  color: var(--muted);
+}
+.hl-why summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--live);
+  padding: 6px 0;
+}
+.hl-why ul {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  font-size: 12.5px;
+  color: #b9c6da;
+}
+html[data-density='compact'] .hl-mkt {
+  padding: 4px 9px;
+  font-size: 11.5px;
+}
+html[data-density='compact'] .hl-ticker {
+  padding: 7px 10px;
+  margin-bottom: 8px;
+}
+html[data-density='compact'] .hl-ticker-p {
+  font-size: 18px;
+}
+
+/* ============================================================================
+   AI karar kartı — POZİSYON AL / BEKLE / GİRME
+   Renk kararın kendisini taşır: yeşil gir, sarı bekle, kırmızı girme.
+   ========================================================================= */
+.hl-decision {
+  border-left: 3px solid var(--border);
+}
+.hl-decision.v-enter {
+  border-left-color: var(--pos);
+}
+.hl-decision.v-wait {
+  border-left-color: var(--live);
+}
+.hl-decision.v-avoid {
+  border-left-color: var(--neg);
+}
+
+.dec-hero {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.dec-verdict {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 5px 14px;
+  border-radius: 8px;
+}
+.dec-verdict.enter {
+  color: #04120c;
+  background: var(--pos);
+}
+.dec-verdict.wait {
+  color: #171003;
+  background: var(--live);
+}
+.dec-verdict.avoid {
+  color: #16060a;
+  background: var(--neg);
+}
+.dec-reason {
+  margin: 0 0 6px;
+  font-size: 13.5px;
+  color: #cbd5e6;
+}
+.dec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px 18px;
+  margin: 12px 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.dec-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.dec-k {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.dec-v {
+  font-size: 14px;
+  font-weight: 600;
+}
+.dec-v .muted {
+  font-weight: 400;
+  font-size: 12.5px;
+}
+.dec-note {
+  margin: 4px 0;
+  font-size: 12.5px;
+  color: #a9b7cb;
+}
+.dec-apply {
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px;
+}
+.dec-more {
+  margin-top: 10px;
+}
+.dec-more summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--accent);
+  padding: 5px 0;
+}
+.dec-more p {
+  font-size: 12.5px;
+  color: #b9c6da;
+  margin: 4px 0;
+}
+
+/* --- kaldıraç modu (elle / AI) --- */
+.lev-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+  font-size: 12.5px;
+}
+.lev-mode button {
+  font-size: 10.5px;
+  padding: 3px 9px;
+}
+.lev-mode button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.hl-form input[type='range']:disabled {
+  opacity: 0.5;
+}
+html[data-density='compact'] .dec-verdict {
+  font-size: 16px;
+  padding: 3px 11px;
+}
+html[data-density='compact'] .dec-grid {
+  padding: 7px 10px;
+  margin: 8px 0 6px;
+}

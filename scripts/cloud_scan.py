@@ -19,11 +19,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+
+# scripts/ altindan kosuldugunda Python repo kokunu sys.path'e koymaz; ekle.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.indicators.technical import compute_snapshot
 from engine.marketdata import hyperliquid as hl
